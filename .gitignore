@@ -1,0 +1,154 @@
+# Android 构建输出
+*.iml
+.gradle
+/local.properties
+/build
+/*/build
+app/build
+app/release
+app/debug
+
+# Gradle wrapper 缓存
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Android Studio / IntelliJ IDEA
+/.idea/
+*.iws
+*.ipr
+*.iml
+.idea/caches
+.idea/libraries
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/gradle.xml
+.idea/jarRepositories.xml
+.idea/compiler.xml
+.idea/misc.xml
+.idea/runConfigurations.xml
+.idea/deploymentTargetDropDown.xml
+
+# NDK
+obj/
+.cxx/
+.externalNativeBuild/
+
+# Android 签名文件
+*.jks
+*.keystore
+release/
+signed/
+keystore.properties
+
+# 捕获文件 
+/captures
+*.hprof
+
+# 日志文件
+*.log
+
+# 操作系统相关
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node.js (信令服务器)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# WebRTC 特定文件
+webrtc-logs/
+*.dump
+*.trace
+
+# 测试相关
+/androidTest/
+/test/
+*.gcno
+*.gcda
+coverage/
+reports/
+
+# Lint
+lint-results*.xml
+lint-results*.html
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# 性能分析
+*.hprof
+*.trace
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 环境配置文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 自定义配置文件
+config.properties
+secrets.properties
+api-keys.properties
+
+# APK 输出目录
+*.apk
+*.aab
+outputs/
+
+# ProGuard
+proguard/
+mapping.txt
+
+# DexGuard
+*.dg
+
+# 美团热修复
+*.patch
+
+# 腾讯 Bugly
+crashreport/
+
+# 个人配置文件
+personal-config.*
+
+# 网络测试结果
+test-results/
+network-test-results.txt
+connectivity-test-results.txt
+
+# WebRTC 调试文件
+webrtc_logs/
+rtc_event_log/
+*.webrtclog
+
+# 编译器生成文件
+hs_err_pid*
+replay_pid*

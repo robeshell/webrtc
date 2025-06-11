@@ -1,0 +1,398 @@
+package com.example.webrtc.manager
+
+import android.app.Activity
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
+import android.os.Build
+import android.util.DisplayMetrics
+import android.util.Log
+import android.view.WindowManager
+import androidx.core.app.NotificationCompat
+import com.example.webrtc.config.WebRTCConfig
+import com.example.webrtc.model.ScreenShareState
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import org.webrtc.ScreenCapturerAndroid
+import org.webrtc.VideoCapturer
+
+/**
+ * 屏幕捕获管理器
+ * 负责Android屏幕录制权限申请和屏幕捕获功能
+ */
+class ScreenCaptureManager(private val context: Context) {
+    
+    companion object {
+        private const val TAG = "ScreenCaptureManager"
+    }
+    
+    // 屏幕录制相关
+    private var mediaProjectionManager: MediaProjectionManager? = null
+    private var mediaProjection: MediaProjection? = null
+    private var screenCapturer: ScreenCapturerAndroid? = null
+    
+    // 状态管理
+    private val _screenShareState = MutableStateFlow(ScreenShareState.IDLE)
+    val screenShareState: StateFlow<ScreenShareState> = _screenShareState.asStateFlow()
+    
+    // 屏幕信息
+    private val displayMetrics = DisplayMetrics()
+    
+    // 权限数据存储
+    private var permissionResultCode: Int = 0
+    private var permissionData: Intent? = null
+    
+    init {
+        mediaProjectionManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        updateDisplayMetrics()
+    }
+    
+    /**
+     * 更新显示器信息
+     */
+    private fun updateDisplayMetrics() {
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        windowManager.defaultDisplay.getMetrics(displayMetrics)
+        Log.d(TAG, "屏幕信息: ${displayMetrics.widthPixels}x${displayMetrics.heightPixels}, 密度: ${displayMetrics.density}")
+    }
+    
+    /**
+     * 请求屏幕录制权限
+     */
+    fun requestScreenCapturePermission(activity: Activity) {
+        Log.d(TAG, "请求屏幕录制权限")
+        
+        if (mediaProjectionManager == null) {
+            Log.e(TAG, "MediaProjectionManager未初始化")
+            _screenShareState.value = ScreenShareState.ERROR
+            return
+        }
+        
+        // 先启动前台服务，确保在权限获取过程中服务已经运行
+        Log.d(TAG, "在请求权限前启动前台服务")
+        try {
+            startForegroundService()
+            Log.d(TAG, "前台服务启动命令已发送")
+        } catch (e: Exception) {
+            Log.e(TAG, "启动前台服务失败", e)
+            _screenShareState.value = ScreenShareState.ERROR
+            return
+        }
+        
+        _screenShareState.value = ScreenShareState.PERMISSION_REQUIRED
+        
+        // 稍微延迟以确保服务有时间启动
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            val captureIntent = mediaProjectionManager!!.createScreenCaptureIntent()
+            activity.startActivityForResult(
+                captureIntent,
+                WebRTCConfig.ScreenCapture.MEDIA_PROJECTION_REQUEST_CODE
+            )
+        }, 200) // 200ms延迟
+    }
+    
+    /**
+     * 处理权限请求结果
+     */
+    fun handleScreenCapturePermissionResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != WebRTCConfig.ScreenCapture.MEDIA_PROJECTION_REQUEST_CODE) {
+            return false
+        }
+        
+        if (resultCode != Activity.RESULT_OK || data == null) {
+            Log.w(TAG, "屏幕录制权限被拒绝")
+            _screenShareState.value = ScreenShareState.ERROR
+            return false
+        }
+        
+        Log.i(TAG, "屏幕录制权限获取成功")
+        
+        try {
+            // 保存权限数据
+            permissionResultCode = resultCode
+            permissionData = data
+            
+            // 检测权限数据中的录制范围设置
+            detectRecordingScope(data)
+            
+            // 前台服务已在请求权限前启动，直接创建MediaProjection
+            Log.d(TAG, "使用已启动的前台服务创建MediaProjection")
+            
+            // 创建MediaProjection
+            mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
+            
+            if (mediaProjection == null) {
+                Log.e(TAG, "创建MediaProjection失败")
+                _screenShareState.value = ScreenShareState.ERROR
+                return false
+            }
+            
+            // 设置回调
+            mediaProjection?.registerCallback(MediaProjectionCallback(), null)
+            
+            _screenShareState.value = ScreenShareState.PREPARING
+            return true
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "处理屏幕录制权限结果失败", e)
+            _screenShareState.value = ScreenShareState.ERROR
+            return false
+        }
+    }
+    
+    /**
+     * 检测用户在系统对话框中选择的录制范围
+     */
+    private fun detectRecordingScope(data: Intent) {
+        try {
+            // 检查Intent中的额外信息，判断用户是否选择了单应用录制
+            val extras = data.extras
+            if (extras != null) {
+                // 一些厂商会在Intent中添加录制范围信息
+                val recordingMode = extras.getString("recording_mode")
+                val captureArea = extras.getString("capture_area") 
+                val isAppOnly = extras.getBoolean("single_app", false)
+                
+                Log.d(TAG, "权限Intent额外信息: recording_mode=$recordingMode, capture_area=$captureArea, single_app=$isAppOnly")
+                
+                if (isAppOnly || recordingMode == "single_app" || captureArea == "app") {
+                    Log.w(TAG, "检测到用户可能选择了单应用录制模式")
+                }
+            }
+            
+            // 检查Intent的action和category
+            val action = data.action
+            val categories = data.categories
+            Log.d(TAG, "权限Intent信息: action=$action, categories=$categories")
+            
+        } catch (e: Exception) {
+            Log.d(TAG, "检测录制范围时出现异常（正常情况）: ${e.message}")
+        }
+    }
+    
+    /**
+     * 创建屏幕捕获器
+     */
+    fun createScreenCapturer(): VideoCapturer? {
+        Log.d(TAG, "开始创建屏幕捕获器...")
+        
+        if (permissionData == null) {
+            Log.e(TAG, "权限数据未初始化，无法创建屏幕捕获器")
+            _screenShareState.value = ScreenShareState.ERROR
+            return null
+        }
+        
+        if (mediaProjection == null) {
+            Log.e(TAG, "MediaProjection未初始化，无法创建屏幕捕获器")
+            _screenShareState.value = ScreenShareState.ERROR
+            return null
+        }
+        
+        Log.d(TAG, "权限数据和MediaProjection都已准备好，创建ScreenCapturerAndroid...")
+        
+        return try {
+            screenCapturer = ScreenCapturerAndroid(
+                permissionData!!, // 传入Intent
+                object : MediaProjection.Callback() {
+                    override fun onStop() {
+                        Log.i(TAG, "MediaProjection停止回调")
+                        _screenShareState.value = ScreenShareState.STOPPED
+                    }
+                }
+            )
+            
+            if (screenCapturer == null) {
+                Log.e(TAG, "ScreenCapturerAndroid创建返回null")
+                _screenShareState.value = ScreenShareState.ERROR
+                return null
+            }
+            
+            Log.i(TAG, "屏幕捕获器创建成功，更新状态为SHARING")
+            _screenShareState.value = ScreenShareState.SHARING
+            screenCapturer
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "创建屏幕捕获器异常", e)
+            _screenShareState.value = ScreenShareState.ERROR
+            null
+        }
+    }
+    
+    /**
+     * 停止屏幕捕获
+     */
+    fun stopScreenCapture() {
+        Log.d(TAG, "停止屏幕捕获")
+        
+        try {
+            // 停止屏幕捕获器
+            screenCapturer?.let { capturer ->
+                capturer.stopCapture()
+                capturer.dispose()
+                screenCapturer = null
+                Log.d(TAG, "屏幕捕获器已停止")
+            }
+            
+            // 停止MediaProjection
+            mediaProjection?.let { projection ->
+                projection.stop()
+                mediaProjection = null
+                Log.d(TAG, "MediaProjection已停止")
+            }
+            
+            // 停止前台服务
+            stopForegroundService()
+            
+            _screenShareState.value = ScreenShareState.STOPPED
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "停止屏幕捕获失败", e)
+            _screenShareState.value = ScreenShareState.ERROR
+        }
+    }
+    
+    /**
+     * 获取屏幕尺寸
+     */
+    fun getScreenSize(): Pair<Int, Int> {
+        updateDisplayMetrics()
+        return Pair(displayMetrics.widthPixels, displayMetrics.heightPixels)
+    }
+    
+    /**
+     * 获取屏幕密度
+     */
+    fun getScreenDensity(): Float {
+        return displayMetrics.density
+    }
+    
+    /**
+     * 获取推荐的视频分辨率
+     */
+    fun getRecommendedVideoSize(): Pair<Int, Int> {
+        val (screenWidth, screenHeight) = getScreenSize()
+        
+        // 根据屏幕尺寸计算推荐分辨率
+        return when {
+            screenWidth >= 1920 && screenHeight >= 1080 -> {
+                // 4K屏幕 -> 1080p
+                Pair(1920, 1080)
+            }
+            screenWidth >= 1280 && screenHeight >= 720 -> {
+                // 1080p屏幕 -> 720p
+                Pair(1280, 720)
+            }
+            else -> {
+                // 低分辨率屏幕 -> 按比例缩放
+                val scale = minOf(1280.0 / screenWidth, 720.0 / screenHeight)
+                Pair(
+                    (screenWidth * scale).toInt(),
+                    (screenHeight * scale).toInt()
+                )
+            }
+        }
+    }
+    
+    /**
+     * 检查是否支持屏幕录制
+     */
+    fun isScreenCaptureSupported(): Boolean {
+        return mediaProjectionManager != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP
+    }
+    
+    /**
+     * 检查是否有屏幕录制权限
+     */
+    fun hasScreenCapturePermission(): Boolean {
+        return mediaProjection != null
+    }
+    
+    /**
+     * 获取当前屏幕捕获器
+     */
+    fun getCurrentScreenCapturer(): VideoCapturer? {
+        return screenCapturer
+    }
+    
+    /**
+     * 手动设置屏幕共享状态（用于ViewCapturer模式）
+     */
+    fun setScreenShareState(state: ScreenShareState) {
+        _screenShareState.value = state
+    }
+    
+    /**
+     * 释放资源
+     */
+    fun release() {
+        Log.d(TAG, "释放屏幕捕获资源")
+        
+        try {
+            // 停止屏幕捕获
+            stopScreenCapture()
+            
+            // 清理状态
+            _screenShareState.value = ScreenShareState.IDLE
+            
+            Log.i(TAG, "屏幕捕获资源释放完成")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "释放屏幕捕获资源失败", e)
+        }
+    }
+    
+    /**
+     * 启动前台服务
+     */
+    private fun startForegroundService() {
+        Log.d(TAG, "启动屏幕录制前台服务")
+        
+        val intent = Intent(context, ScreenCaptureService::class.java)
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            context.startForegroundService(intent)
+        } else {
+            context.startService(intent)
+        }
+    }
+    
+    /**
+     * 停止前台服务
+     */
+    private fun stopForegroundService() {
+        Log.d(TAG, "停止屏幕录制前台服务")
+        
+        try {
+            val intent = Intent(context, ScreenCaptureService::class.java)
+            context.stopService(intent)
+            Log.d(TAG, "前台服务停止命令已发送")
+        } catch (e: Exception) {
+            Log.e(TAG, "停止前台服务失败", e)
+        }
+    }
+
+    /**
+     * MediaProjection回调
+     */
+    private inner class MediaProjectionCallback : MediaProjection.Callback() {
+        override fun onStop() {
+            Log.i(TAG, "MediaProjection回调: 停止")
+            _screenShareState.value = ScreenShareState.STOPPED
+        }
+    }
+}
+
+/**
+ * 屏幕捕获事件回调接口
+ */
+interface ScreenCaptureCallback {
+    fun onScreenCaptureStarted()
+    fun onScreenCaptureStopped()
+    fun onScreenCaptureError(error: String)
+} 

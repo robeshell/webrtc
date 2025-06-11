@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC 屏幕投屏 - Web 客户端</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div id="app">
+        <!-- 标题区 -->
+        <header class="header">
+            <div class="container">
+                <div class="header-content">
+                    <h1 class="title">
+                        <span class="icon">📱</span>
+                        Android 屏幕投屏
+                    </h1>
+                    <div class="status-bar">
+                        <div class="status-item">
+                            <span class="status-label">服务器:</span>
+                            <span id="serverStatus" class="status-value disconnected">未连接</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">房间:</span>
+                            <span id="roomStatus" class="status-value">未加入</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="status-label">连接:</span>
+                            <span id="connectionStatus" class="status-value">等待中</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主体内容 -->
+        <main class="main">
+            <div class="container">
+                <!-- 连接控制面板 -->
+                <div class="control-panel" id="controlPanel">
+                    <div class="panel-header">
+                        <h2>连接设置</h2>
+                    </div>
+                    <div class="panel-content">
+                        <div class="form-group">
+                            <label for="roomIdInput">房间ID:</label>
+                            <div class="input-group">
+                                <input type="text" id="roomIdInput" placeholder="输入房间ID" maxlength="20">
+                                <button id="generateRoomBtn" class="btn btn-secondary" title="生成随机房间ID">
+                                    🎲
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="userNameInput">用户名:</label>
+                            <input type="text" id="userNameInput" placeholder="输入您的用户名" maxlength="20">
+                        </div>
+                        <div class="form-group">
+                            <label for="serverUrlInput">服务器地址:</label>
+                            <input type="text" id="serverUrlInput" value="ws://192.168.31.121:3000" placeholder="ws://localhost:3000">
+                        </div>
+                        <div class="button-group">
+                            <button id="connectBtn" class="btn btn-primary">连接房间</button>
+                            <button id="disconnectBtn" class="btn btn-danger" disabled>断开连接</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 视频显示区域 -->
+                <div class="video-container" id="videoContainer">
+                    <div class="video-wrapper">
+                        <video id="remoteVideo" autoplay playsinline muted></video>
+                        <div class="video-overlay" id="videoOverlay">
+                            <div class="overlay-content">
+                                <div class="waiting-icon">📱</div>
+                                <h3>等待屏幕投屏</h3>
+                                <p>请在 Android 设备上启动投屏应用并加入相同房间</p>
+                                <div class="room-info" id="roomInfo" style="display: none;">
+                                    <p>房间ID: <span id="currentRoomId"></span></p>
+                                    <p>用户数: <span id="userCount">0</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 视频控制栏 -->
+                        <div class="video-controls" id="videoControls" style="display: none;">
+                            <div class="controls-left">
+                                <button id="playPauseBtn" class="control-btn" title="播放/暂停">⏸️</button>
+                                <button id="muteBtn" class="control-btn" title="静音/取消静音">🔊</button>
+                                <input type="range" id="volumeSlider" min="0" max="100" value="100" class="volume-slider">
+                            </div>
+                            <div class="controls-center">
+                                <span id="videoInfo" class="video-info"></span>
+                            </div>
+                            <div class="controls-right">
+                                <button id="fullscreenBtn" class="control-btn" title="全屏">⛶</button>
+                                <button id="screenshotBtn" class="control-btn" title="截图">📸</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 日志面板 -->
+                <div class="log-panel" id="logPanel">
+                    <div class="panel-header">
+                        <h3>连接日志</h3>
+                        <div class="panel-actions">
+                            <button id="clearLogBtn" class="btn btn-small">清空</button>
+                            <button id="toggleLogBtn" class="btn btn-small">收起</button>
+                        </div>
+                    </div>
+                    <div class="log-content" id="logContent">
+                        <div class="log-item info">
+                            <span class="log-time">[初始化]</span>
+                            <span class="log-message">Web 客户端已加载，等待连接...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- 提示弹窗 -->
+        <div id="notification" class="notification" style="display: none;">
+            <div class="notification-content">
+                <span id="notificationMessage"></span>
+                <button id="closeNotification" class="notification-close">×</button>
+            </div>
+        </div>
+
+        <!-- 统计信息（调试用） -->
+        <div class="stats-panel" id="statsPanel" style="display: none;">
+            <div class="panel-header">
+                <h4>连接统计</h4>
+                <button id="toggleStatsBtn" class="btn btn-small">隐藏</button>
+            </div>
+            <div class="stats-content" id="statsContent">
+                <!-- 统计信息将通过 JavaScript 动态填充 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.IO 客户端 -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- 应用程序脚本 -->
+    <script src="js/webrtc-client.js"></script>
+    <script src="js/ui-controller.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html> 
