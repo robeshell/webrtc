@@ -74,6 +74,10 @@ class ScreenCaptureManager(private val context: Context) {
             return
         }
         
+        // 在请求新权限前，先清理之前的资源
+        Log.d(TAG, "清理之前的MediaProjection资源")
+        cleanupMediaProjection()
+        
         // 先启动前台服务，确保在权限获取过程中服务已经运行
         Log.d(TAG, "在请求权限前启动前台服务")
         try {
@@ -114,6 +118,9 @@ class ScreenCaptureManager(private val context: Context) {
         Log.i(TAG, "屏幕录制权限获取成功")
         
         try {
+            // 确保之前的资源已清理
+            cleanupMediaProjection()
+            
             // 保存权限数据
             permissionResultCode = resultCode
             permissionData = data
@@ -121,20 +128,8 @@ class ScreenCaptureManager(private val context: Context) {
             // 检测权限数据中的录制范围设置
             detectRecordingScope(data)
             
-            // 前台服务已在请求权限前启动，直接创建MediaProjection
-            Log.d(TAG, "使用已启动的前台服务创建MediaProjection")
-            
-            // 创建MediaProjection
-            mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, data)
-            
-            if (mediaProjection == null) {
-                Log.e(TAG, "创建MediaProjection失败")
-                _screenShareState.value = ScreenShareState.ERROR
-                return false
-            }
-            
-            // 设置回调
-            mediaProjection?.registerCallback(MediaProjectionCallback(), null)
+            // 不在这里创建MediaProjection，而是在createScreenCapturer中创建
+            Log.d(TAG, "权限数据已保存，准备创建屏幕捕获器")
             
             _screenShareState.value = ScreenShareState.PREPARING
             return true
@@ -188,21 +183,30 @@ class ScreenCaptureManager(private val context: Context) {
             return null
         }
         
-        if (mediaProjection == null) {
-            Log.e(TAG, "MediaProjection未初始化，无法创建屏幕捕获器")
-            _screenShareState.value = ScreenShareState.ERROR
-            return null
-        }
-        
-        Log.d(TAG, "权限数据和MediaProjection都已准备好，创建ScreenCapturerAndroid...")
+        Log.d(TAG, "权限数据已准备好，创建ScreenCapturerAndroid...")
         
         return try {
+            // 确保之前的捕获器已清理
+            screenCapturer?.let { oldCapturer ->
+                Log.d(TAG, "清理之前的屏幕捕获器")
+                try {
+                    oldCapturer.stopCapture()
+                    oldCapturer.dispose()
+                } catch (e: Exception) {
+                    Log.w(TAG, "清理旧捕获器时出现异常", e)
+                }
+                screenCapturer = null
+            }
+            
+            // 创建新的ScreenCapturerAndroid，使用权限Intent
             screenCapturer = ScreenCapturerAndroid(
-                permissionData!!, // 传入Intent
+                permissionData!!, // 使用权限Intent，WebRTC内部会创建MediaProjection
                 object : MediaProjection.Callback() {
                     override fun onStop() {
                         Log.i(TAG, "MediaProjection停止回调")
                         _screenShareState.value = ScreenShareState.STOPPED
+                        // 清理资源
+                        cleanupMediaProjection()
                     }
                 }
             )
@@ -220,7 +224,46 @@ class ScreenCaptureManager(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "创建屏幕捕获器异常", e)
             _screenShareState.value = ScreenShareState.ERROR
+            // 清理资源
+            cleanupMediaProjection()
             null
+        }
+    }
+    
+    /**
+     * 清理MediaProjection相关资源
+     */
+    private fun cleanupMediaProjection() {
+        Log.d(TAG, "开始清理MediaProjection资源")
+        
+        try {
+            // 停止屏幕捕获器
+            screenCapturer?.let { capturer ->
+                Log.d(TAG, "停止并释放屏幕捕获器")
+                try {
+                    capturer.stopCapture()
+                    capturer.dispose()
+                } catch (e: Exception) {
+                    Log.w(TAG, "停止屏幕捕获器时出现异常", e)
+                }
+                screenCapturer = null
+            }
+            
+            // 停止MediaProjection
+            mediaProjection?.let { projection ->
+                Log.d(TAG, "停止MediaProjection")
+                try {
+                    projection.stop()
+                } catch (e: Exception) {
+                    Log.w(TAG, "停止MediaProjection时出现异常", e)
+                }
+                mediaProjection = null
+            }
+            
+            Log.d(TAG, "MediaProjection资源清理完成")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "清理MediaProjection资源时出现异常", e)
         }
     }
     
@@ -231,23 +274,15 @@ class ScreenCaptureManager(private val context: Context) {
         Log.d(TAG, "停止屏幕捕获")
         
         try {
-            // 停止屏幕捕获器
-            screenCapturer?.let { capturer ->
-                capturer.stopCapture()
-                capturer.dispose()
-                screenCapturer = null
-                Log.d(TAG, "屏幕捕获器已停止")
-            }
-            
-            // 停止MediaProjection
-            mediaProjection?.let { projection ->
-                projection.stop()
-                mediaProjection = null
-                Log.d(TAG, "MediaProjection已停止")
-            }
+            // 清理MediaProjection资源
+            cleanupMediaProjection()
             
             // 停止前台服务
             stopForegroundService()
+            
+            // 清理权限数据（避免重复使用过期token）
+            permissionData = null
+            permissionResultCode = 0
             
             _screenShareState.value = ScreenShareState.STOPPED
             
@@ -310,7 +345,7 @@ class ScreenCaptureManager(private val context: Context) {
      * 检查是否有屏幕录制权限
      */
     fun hasScreenCapturePermission(): Boolean {
-        return mediaProjection != null
+        return permissionData != null && permissionResultCode == Activity.RESULT_OK
     }
     
     /**

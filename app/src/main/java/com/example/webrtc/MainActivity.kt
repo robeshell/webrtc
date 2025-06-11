@@ -1239,7 +1239,14 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
         
         lifecycleScope.launch {
             try {
-                Log.i(TAG, "正在请求屏幕录制权限...")
+                Log.i(TAG, "正在开始屏幕投屏...")
+                
+                // 首先停止任何现有的投屏
+                if (isScreenSharing) {
+                    Log.d(TAG, "停止现有的投屏会话")
+                    stopScreenShare()
+                    kotlinx.coroutines.delay(500) // 等待清理完成
+                }
                 
                 if (captureMode == CaptureMode.APP_CONTENT) {
                     // App内容模式：直接开始投屏，不需要系统权限
@@ -1248,6 +1255,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
                     continueScreenShare()
                 } else {
                     // 全屏模式：需要请求系统权限
+                    Log.i(TAG, "使用全屏模式，请求屏幕录制权限...")
                     screenCaptureManager.requestScreenCapturePermission(this@MainActivity)
                 }
                 
