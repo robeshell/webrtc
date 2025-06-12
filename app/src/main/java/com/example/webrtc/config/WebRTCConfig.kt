@@ -41,9 +41,9 @@ object WebRTCConfig {
      * 视频编码配置
      */
     object Video {
-        // 分辨率配置 - 为不同模式提供不同配置
-        const val DEFAULT_WIDTH = 1024  // App内容模式默认宽度
-        const val DEFAULT_HEIGHT = 576  // App内容模式默认高度
+        // 🚀 大幅提升App内容模式分辨率配置
+        const val DEFAULT_WIDTH = 1920   // App内容模式提升到1080p宽度
+        const val DEFAULT_HEIGHT = 1080  // App内容模式提升到1080p高度
         
         // 全屏模式超高画质配置
         const val FULLSCREEN_WIDTH = 1920   // 全屏模式高分辨率
@@ -52,17 +52,17 @@ object WebRTCConfig {
         const val MAX_WIDTH = 1920
         const val MAX_HEIGHT = 1080
         
-        // 帧率配置 - 为不同模式提供不同配置
-        const val DEFAULT_FPS = 20      // App内容模式帧率
+        // 🚀 提升App内容模式帧率
+        const val DEFAULT_FPS = 30      // App内容模式提升到30fps
         const val FULLSCREEN_FPS = 30   // 全屏模式高帧率
         const val MAX_FPS = 60          // 最大帧率
         const val MIN_FPS = 10          // 最小帧率
         
-        // 码率配置（kbps）- 大幅提升全屏模式画质
-        const val DEFAULT_BITRATE = 1500    // App内容模式码率
-        const val FULLSCREEN_BITRATE = 6000 // 全屏模式超高码率（提升到6000kbps）
-        const val MIN_BITRATE = 300         // 最小码率
-        const val MAX_BITRATE = 8000        // 最大码率
+        // 🚀 大幅提升App内容模式码率配置，追求高清传输
+        const val DEFAULT_BITRATE = 8000    // App内容模式大幅提升到8Mbps
+        const val FULLSCREEN_BITRATE = 12000 // 全屏模式提升到12Mbps，确保1080p质量
+        const val MIN_BITRATE = 3000        // 最小码率提升到3Mbps
+        const val MAX_BITRATE = 15000       // 最大码率提升到15Mbps
         
         // 编码器配置
         const val HARDWARE_ACCELERATION = true
@@ -206,8 +206,8 @@ data class DynamicConfig(
      */
     fun getSafeConfig(): DynamicConfig {
         return copy(
-            videoWidth = videoWidth.coerceIn(480, WebRTCConfig.Video.MAX_WIDTH),
-            videoHeight = videoHeight.coerceIn(320, WebRTCConfig.Video.MAX_HEIGHT),
+            videoWidth = videoWidth.coerceIn(640, WebRTCConfig.Video.MAX_WIDTH),  // 提高最小宽度到640
+            videoHeight = videoHeight.coerceIn(480, WebRTCConfig.Video.MAX_HEIGHT), // 提高最小高度到480
             videoFps = videoFps.coerceIn(WebRTCConfig.Video.MIN_FPS, WebRTCConfig.Video.MAX_FPS),
             videoBitrate = videoBitrate.coerceIn(WebRTCConfig.Video.MIN_BITRATE, WebRTCConfig.Video.MAX_BITRATE),
             audioBitrate = audioBitrate.coerceAtLeast(64)

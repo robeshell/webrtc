@@ -76,10 +76,10 @@
 ### 视频配置
 ```kotlin
 object Video {
-    const val DEFAULT_WIDTH = 1280      // 默认宽度
-    const val DEFAULT_HEIGHT = 720      // 默认高度
+    const val DEFAULT_WIDTH = 1920      // App内容模式：1080p宽度
+    const val DEFAULT_HEIGHT = 1080     // App内容模式：1080p高度
     const val DEFAULT_FPS = 30         // 默认帧率
-    const val DEFAULT_BITRATE = 2500   // 默认码率(kbps)
+    const val DEFAULT_BITRATE = 8000   // App内容模式：8Mbps超高清码率
     const val HARDWARE_ACCELERATION = true  // 硬件加速
 }
 ```

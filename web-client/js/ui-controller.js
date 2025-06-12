@@ -18,6 +18,7 @@ class UIController {
             
             // 按钮
             generateRoomBtn: document.getElementById('generateRoomBtn'),
+            quickWaitBtn: document.getElementById('quickWaitBtn'),
             connectBtn: document.getElementById('connectBtn'),
             disconnectBtn: document.getElementById('disconnectBtn'),
             
@@ -67,6 +68,13 @@ class UIController {
         if (this.elements.generateRoomBtn) {
             this.elements.generateRoomBtn.addEventListener('click', () => {
                 this.generateRoomId();
+            });
+        }
+
+        // 🆕 快速等待投屏
+        if (this.elements.quickWaitBtn) {
+            this.elements.quickWaitBtn.addEventListener('click', () => {
+                this.quickWaitForCasting();
             });
         }
 
@@ -186,12 +194,103 @@ class UIController {
     /**
      * 生成随机房间ID
      */
-    generateRoomId() {
+    async generateRoomId() {
+        try {
+            // 首先尝试从服务器获取新的房间号
+            const serverUrl = this.elements.serverUrlInput?.value || 'ws://192.168.31.121:3000';
+            const httpUrl = serverUrl.replace('ws://', 'http://').replace('wss://', 'https://');
+            
+            const response = await fetch(`${httpUrl}/api/create-room`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    const roomId = data.roomId;
+                    if (this.elements.roomIdInput) {
+                        this.elements.roomIdInput.value = roomId;
+                    }
+                    this.addLog(`🎲 从服务器获取房间号: ${roomId}`, 'success');
+                    this.showSuccess(`房间号已生成: ${roomId}`);
+                    return roomId;
+                }
+            }
+        } catch (error) {
+            console.warn('从服务器获取房间号失败，使用本地生成:', error);
+        }
+        
+        // 降级到本地生成
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
         if (this.elements.roomIdInput) {
             this.elements.roomIdInput.value = roomId;
         }
-        this.addLog(`生成房间ID: ${roomId}`, 'info');
+        this.addLog(`🎲 本地生成房间号: ${roomId}`, 'info');
+        return roomId;
+    }
+
+    /**
+     * 🆕 快速等待投屏模式
+     */
+    async quickWaitForCasting() {
+        try {
+            // 生成房间号
+            const roomId = await this.generateRoomId();
+            
+            // 自动填入用户名（如果为空）
+            if (this.elements.userNameInput && !this.elements.userNameInput.value) {
+                this.elements.userNameInput.value = `观看者_${Math.floor(Math.random() * 1000)}`;
+            }
+            
+            // 显示等待投屏的提示
+            this.showWaitingForCasting(roomId);
+            
+            // 自动连接
+            setTimeout(() => {
+                this.handleConnect();
+            }, 1000);
+            
+        } catch (error) {
+            console.error('快速等待投屏失败:', error);
+            this.showError('启动等待投屏模式失败');
+        }
+    }
+
+    /**
+     * 🆕 显示等待投屏界面
+     */
+    showWaitingForCasting(roomId) {
+        // 更新房间信息显示
+        const roomInfo = this.elements.roomInfo;
+        const currentRoomId = this.elements.currentRoomId;
+        
+        if (roomInfo && currentRoomId) {
+            currentRoomId.textContent = roomId;
+            roomInfo.style.display = 'block';
+        }
+        
+        // 显示简洁的等待界面
+        const videoOverlay = document.getElementById('videoOverlay');
+        if (videoOverlay) {
+            videoOverlay.innerHTML = `
+                <div class="overlay-content">
+                    <div class="waiting-icon">📱</div>
+                    <h3>等待 Android 投屏</h3>
+                    <div class="room-display">
+                        <div class="room-label">房间号</div>
+                        <div class="room-number">${roomId}</div>
+                    </div>
+                    <div class="auto-refresh-hint">
+                        <small>💡 Android 应用会自动查找此房间</small>
+                    </div>
+                </div>
+            `;
+        }
+        
+        this.addLog(`🏠 房间 ${roomId} 已准备就绪，等待 Android 设备连接...`, 'success');
     }
 
     /**

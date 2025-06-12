@@ -50,6 +50,9 @@ class App {
             window.uiController = this.uiController;
             window.webrtcClient = this.webrtcClient;
             
+            // 🆕 自动填充连接信息或启动快速等待投屏
+            this.autoFillConnectionInfo();
+            
             console.log('应用程序初始化完成');
             this.uiController.addLog('应用程序初始化完成', 'success');
             
@@ -580,6 +583,74 @@ class App {
             reconnectAttempts: this.reconnectAttempts,
             webrtcConnected: this.webrtcClient?.isConnected || false
         };
+    }
+
+    /**
+     * 🆕 自动填充连接信息
+     */
+    autoFillConnectionInfo() {
+        // 从URL参数获取房间号
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomId = urlParams.get('room') || urlParams.get('roomId');
+        const serverUrl = urlParams.get('server') || urlParams.get('serverUrl');
+        
+        if (roomId) {
+            const roomInput = document.getElementById('roomIdInput');
+            if (roomInput) {
+                roomInput.value = roomId;
+                console.log(`🏠 自动填入房间号: ${roomId}`);
+                this.uiController?.showSuccess(`已自动填入房间号: ${roomId}`);
+            }
+        }
+        
+        if (serverUrl) {
+            const serverInput = document.getElementById('serverUrlInput');
+            if (serverInput) {
+                // 确保URL格式正确
+                const formattedUrl = serverUrl.startsWith('ws://') || serverUrl.startsWith('wss://') 
+                    ? serverUrl 
+                    : `ws://${serverUrl}`;
+                serverInput.value = formattedUrl;
+                console.log(`🌐 自动填入服务器地址: ${formattedUrl}`);
+            }
+        }
+        
+        // 生成默认用户名
+        const userNameInput = document.getElementById('userNameInput');
+        if (userNameInput && !userNameInput.value) {
+            userNameInput.value = `用户_${Math.floor(Math.random() * 1000)}`;
+        }
+        
+        // 🚀 如果有URL参数房间号，自动尝试连接
+        if (roomId) {
+            // 延迟1秒后自动连接，给用户时间看到界面
+            setTimeout(() => {
+                this.autoConnect();
+            }, 1000);
+        } else {
+            // 🆕 没有URL参数时，自动启动快速等待投屏模式
+            setTimeout(() => {
+                console.log('🚀 自动启动快速等待投屏模式...');
+                this.uiController?.quickWaitForCasting();
+            }, 2000); // 延迟2秒，让用户看到界面
+        }
+    }
+    
+    /**
+     * 🚀 自动连接功能
+     */
+    async autoConnect() {
+        const roomInput = document.getElementById('roomIdInput');
+        const userNameInput = document.getElementById('userNameInput');
+        const serverInput = document.getElementById('serverUrlInput');
+        
+        if (roomInput?.value && userNameInput?.value && serverInput?.value) {
+            console.log('🚀 自动连接到房间...');
+            this.uiController?.showInfo('正在自动连接...');
+            
+            // 模拟点击连接按钮
+            await this.connectToRoom();
+        }
     }
 }
 

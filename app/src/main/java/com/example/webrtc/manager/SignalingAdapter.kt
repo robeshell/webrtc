@@ -4,7 +4,7 @@ package com.example.webrtc.manager
  * 信令管理器适配器
  * 将SocketIOSignalingManager的回调适配到现有的SignalingCallback接口
  */
-class SignalingAdapter(private val callback: SignalingCallback) : 
+class SignalingAdapter(private val callback: SocketIOSignalingManager.SignalingCallback) : 
     SocketIOSignalingManager.SignalingCallback {
     
     override fun onSignalingConnected() {
@@ -28,7 +28,7 @@ class SignalingAdapter(private val callback: SignalingCallback) :
     }
     
     override fun onUserJoined(userId: String, userType: String) {
-        callback.onUserJoined(userId)
+        callback.onUserJoined(userId, userType)
     }
     
     override fun onUserLeft(userId: String) {
@@ -36,14 +36,14 @@ class SignalingAdapter(private val callback: SignalingCallback) :
     }
     
     override fun onOfferReceived(fromUserId: String, sdp: String) {
-        callback.onOfferReceived(sdp, fromUserId)
+        callback.onOfferReceived(fromUserId, sdp)
     }
     
     override fun onAnswerReceived(fromUserId: String, sdp: String) {
-        callback.onAnswerReceived(sdp, fromUserId)
+        callback.onAnswerReceived(fromUserId, sdp)
     }
     
     override fun onIceCandidateReceived(fromUserId: String, candidate: String, sdpMid: String, sdpMLineIndex: Int) {
-        callback.onIceCandidateReceived(candidate, sdpMid, sdpMLineIndex, fromUserId)
+        callback.onIceCandidateReceived(fromUserId, candidate, sdpMid, sdpMLineIndex)
     }
 } 

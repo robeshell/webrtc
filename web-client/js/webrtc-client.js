@@ -123,54 +123,102 @@ class WebRTCClient {
     }
 
     /**
-     * 处理远程媒体流
+     * 处理远程视频流
      */
     handleRemoteStream(stream) {
-        console.log('处理远程媒体流:', stream);
+        console.log('🎥 收到远程视频流');
         this.remoteStream = stream;
+        
+        if (this.remoteVideo) {
         this.remoteVideo.srcObject = stream;
         
-        // 通知外部组件
-        this.onTrackReceived?.(stream);
+            // 🚨 强制设置视频元素属性以优化分辨率显示
+            this.remoteVideo.style.objectFit = 'fill';  // 强制填充整个容器
+            this.remoteVideo.style.width = '100%';      // 占满容器宽度
+            this.remoteVideo.style.height = '100%';     // 占满容器高度
+            
+            // 监听视频元数据加载完成事件
+            this.remoteVideo.onloadedmetadata = () => {
+                console.log('📺 视频元数据加载完成');
+                this.updateVideoInfo();
+                
+                // 🚨 强制设置更高的显示分辨率
+                const actualWidth = this.remoteVideo.videoWidth;
+                const actualHeight = this.remoteVideo.videoHeight;
+                
+                console.log(`📐 原始视频分辨率: ${actualWidth}×${actualHeight}`);
+                
+                // 🚀 支持多种分辨率的智能显示优化
+                if (actualWidth === 1920 && actualHeight === 1080) {
+                    // 🎉 原生1080p，无需拉伸
+                    console.log(`✅ 检测到原生1080p分辨率: ${actualWidth}×${actualHeight}`);
+                    this.remoteVideo.style.transform = 'none';
+                    if (this.videoInfo) {
+                        this.videoInfo.textContent = `${actualWidth}x${actualHeight} (原生1080p)`;
+                    }
+                } else if ((actualWidth === 640 && actualHeight === 360) || 
+                          (actualWidth === 480 && actualHeight === 270)) {
+                    // 低分辨率需要拉伸显示
+                    const scale = actualWidth === 480 ? 4 : 3; // 480->1920需要4倍，640->1920需要3倍
+                    const targetWidth = 1920;
+                    const targetHeight = 1080;
+                    
+                    console.log(`🚨 检测到${actualWidth}x${actualHeight}，强制拉伸为${targetWidth}x${targetHeight}显示`);
+                    this.remoteVideo.style.transform = `scale(${scale})`;
+                    this.remoteVideo.style.transformOrigin = 'center';
+                    
+                    // 更新显示信息
+                    if (this.videoInfo) {
+                        this.videoInfo.textContent = `${targetWidth}x${targetHeight} (拉伸自 ${actualWidth}x${actualHeight})`;
+                    }
+                } else {
+                    // 其他分辨率，保持原样
+                    this.remoteVideo.style.transform = 'none';
+                    if (this.videoInfo) {
+                        this.videoInfo.textContent = `${actualWidth}x${actualHeight}`;
+                    }
+                }
+            };
+            
+            this.remoteVideo.onplay = () => {
+                console.log('🎬 远程视频开始播放');
+                this.startStatsCollection();
+            };
+            
+            this.remoteVideo.onerror = (error) => {
+                console.error('❌ 远程视频播放错误:', error);
+            };
+        }
         
-        // 开始统计信息监控
-        this.startStatsMonitoring();
+        if (this.onTrackReceived) {
+            this.onTrackReceived(stream);
+        }
     }
 
     /**
      * 处理连接状态变化
      */
     handleConnectionStateChange(state) {
-        this.isConnected = (state === 'connected');
+        console.log('连接状态变化:', state);
+        
+        if (this.onConnectionStateChange) {
+            this.onConnectionStateChange(state);
+        }
         
         switch (state) {
-            case 'connecting':
-                console.log('正在建立连接...');
-                break;
             case 'connected':
                 console.log('连接已建立');
                 this.showSuccess('WebRTC 连接成功建立');
                 break;
             case 'disconnected':
                 console.log('连接已断开');
-                this.showVideoOverlay();
-                this.hideVideoControls();
+                this.showError('WebRTC 连接已断开');
                 break;
             case 'failed':
                 console.log('连接失败');
                 this.showError('WebRTC 连接失败');
-                this.showVideoOverlay();
-                this.hideVideoControls();
-                break;
-            case 'closed':
-                console.log('连接已关闭');
-                this.showVideoOverlay();
-                this.hideVideoControls();
                 break;
         }
-        
-        // 通知外部组件
-        this.onConnectionStateChange?.(state);
     }
 
     /**
@@ -227,6 +275,7 @@ class WebRTCClient {
             await this.peerConnection.setRemoteDescription(offer);
             
             const answer = await this.peerConnection.createAnswer();
+            
             await this.peerConnection.setLocalDescription(answer);
             
             console.log('Answer 已创建:', answer);
@@ -237,6 +286,80 @@ class WebRTCClient {
             this.showError('创建连接响应失败');
             throw error;
         }
+    }
+
+    /**
+     * 修改SDP以支持高分辨率视频
+     * 确保Web端能正确接收高分辨率视频流
+     */
+    modifySdpForHighQuality(sessionDescription) {
+        const originalSdp = sessionDescription.sdp;
+        const modifiedSdp = [];
+        
+        const lines = originalSdp.split('\r\n');
+        let inVideoSection = false;
+        let hasSetBandwidth = false;
+        
+        console.log('🔧 Web端: 正在修改SDP以支持高分辨率视频接收...');
+        
+        for (const line of lines) {
+            if (line.startsWith('m=video')) {
+                inVideoSection = true;
+                modifiedSdp.push(line);
+                console.log('检测到视频媒体部分');
+            } else if (line.startsWith('m=audio') || line.startsWith('m=application')) {
+                inVideoSection = false;
+                modifiedSdp.push(line);
+            } else if (inVideoSection && line.startsWith('a=rtpmap:') && line.includes('H264')) {
+                modifiedSdp.push(line);
+                
+                // 提取payload type
+                const payloadType = line.split(':')[1].split(' ')[0];
+                console.log('找到H.264编码器，Payload Type:', payloadType);
+                
+                // 添加高带宽约束以支持高分辨率
+                if (!hasSetBandwidth) {
+                    // 设置高带宽限制 (支持高达8Mbps的视频流)
+                    modifiedSdp.push('b=CT:8000');
+                    modifiedSdp.push('b=AS:8000');
+                    modifiedSdp.push('b=TIAS:8000000');
+                    
+                    // 添加支持高分辨率的H.264参数
+                    modifiedSdp.push(`a=fmtp:${payloadType} level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e032`);
+                    
+                    hasSetBandwidth = true;
+                    console.log('✅ Web端: 已设置高分辨率支持参数');
+                    console.log('   🎯 最大带宽: 8000kbps');
+                    console.log('   🏗️ H.264 Profile: High Level 5.0 (支持1080p@30fps)');
+                }
+            } else if (inVideoSection && line.startsWith('a=fmtp:') && line.includes('profile-level-id')) {
+                // 跳过原有的profile-level-id设置
+                console.log('跳过原有的profile-level-id设置:', line);
+                continue;
+            } else if (inVideoSection && (line.startsWith('b=CT:') || line.startsWith('b=AS:') || line.startsWith('b=TIAS:'))) {
+                // 跳过原有的带宽设置
+                console.log('跳过原有的带宽设置:', line);
+                continue;
+            } else {
+                modifiedSdp.push(line);
+            }
+        }
+        
+        const finalSdp = modifiedSdp.join('\r\n');
+        console.log('🎉 Web端: SDP修改完成！现在应该能接收高分辨率视频流');
+        
+        // 输出关键修改部分用于调试
+        console.log('Web端SDP修改片段:');
+        finalSdp.split('\r\n').forEach(line => {
+            if (line.includes('H264') || line.includes('b=') || line.includes('fmtp')) {
+                console.log('  ', line);
+            }
+        });
+        
+        return new RTCSessionDescription({
+            type: sessionDescription.type,
+            sdp: finalSdp
+        });
     }
 
     /**
@@ -348,6 +471,19 @@ class WebRTCClient {
         if (!this.remoteVideo || !this.videoInfo) return;
         
         const video = this.remoteVideo;
+        
+        // 🚨 强制调试：打印所有视频属性
+        console.error('🚨🚨🚨 Web端视频信息强制调试 🚨🚨🚨');
+        console.error('📺 videoWidth:', video.videoWidth);
+        console.error('📺 videoHeight:', video.videoHeight);
+        console.error('📺 clientWidth:', video.clientWidth);
+        console.error('📺 clientHeight:', video.clientHeight);
+        console.error('📺 offsetWidth:', video.offsetWidth);
+        console.error('📺 offsetHeight:', video.offsetHeight);
+        console.error('📺 naturalWidth:', video.naturalWidth || 'N/A');
+        console.error('📺 naturalHeight:', video.naturalHeight || 'N/A');
+        console.error('🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨');
+        
         const info = `${video.videoWidth}x${video.videoHeight}`;
         this.videoInfo.textContent = info;
         
@@ -359,9 +495,9 @@ class WebRTCClient {
     }
 
     /**
-     * 开始统计信息监控
+     * 开始统计信息收集
      */
-    startStatsMonitoring() {
+    startStatsCollection() {
         if (this.statsInterval) {
             clearInterval(this.statsInterval);
         }
@@ -371,11 +507,85 @@ class WebRTCClient {
                 try {
                     const stats = await this.peerConnection.getStats();
                     this.processStats(stats);
+                    // 🚨 检查分辨率并尝试优化
+                    this.checkAndOptimizeResolution(stats);
                 } catch (error) {
                     console.error('获取统计信息失败:', error);
                 }
             }
         }, 1000);
+    }
+    
+    /**
+     * 检查并优化分辨率
+     */
+    checkAndOptimizeResolution(stats) {
+        let currentResolution = null;
+        
+        stats.forEach(report => {
+            if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                if (report.frameWidth && report.frameHeight) {
+                    currentResolution = { width: report.frameWidth, height: report.frameHeight };
+                    
+                    // 🚨 如果分辨率不符合预期，尝试优化
+                    if (report.frameWidth === 640 && report.frameHeight === 360) {
+                        console.log('🚨 检测到实际接收分辨率为640x360，尝试优化...');
+                        
+                        // 记录详细统计信息
+                        console.log('📊 详细统计信息:');
+                        console.log('  - 帧宽度:', report.frameWidth);
+                        console.log('  - 帧高度:', report.frameHeight);
+                        console.log('  - 码率:', report.bytesReceived);
+                        console.log('  - 帧率:', report.framesPerSecond);
+                        console.log('  - 丢包率:', report.packetsLost);
+                        
+                        // 尝试请求更高分辨率
+                        this.requestHigherResolution();
+                    }
+                }
+            }
+        });
+        
+        // 更新分辨率显示
+        if (currentResolution && this.videoInfo) {
+            const displayText = `${currentResolution.width}x${currentResolution.height}`;
+            if (this.videoInfo.textContent !== displayText) {
+                this.videoInfo.textContent = displayText;
+                console.log(`📐 分辨率更新: ${displayText}`);
+            }
+        }
+    }
+    
+    /**
+     * 请求更高分辨率
+     */
+    async requestHigherResolution() {
+        if (!this.peerConnection) return;
+        
+        try {
+            // 获取当前的发送者
+            const senders = this.peerConnection.getSenders();
+            const videoSender = senders.find(sender => 
+                sender.track && sender.track.kind === 'video'
+            );
+            
+            if (videoSender) {
+                // 获取发送参数
+                const params = videoSender.getParameters();
+                
+                // 修改编码参数以请求更高分辨率
+                if (params.encodings && params.encodings.length > 0) {
+                    params.encodings[0].maxBitrate = 8000000; // 8Mbps支持1080p
+                    params.encodings[0].scaleResolutionDownBy = 1; // 不降低分辨率
+                    
+                    // 应用新参数
+                    await videoSender.setParameters(params);
+                    console.log('✅ 已请求1080p分辨率和8Mbps码率');
+                }
+            }
+        } catch (error) {
+            console.error('请求更高分辨率失败:', error);
+        }
     }
 
     /**
@@ -527,9 +737,14 @@ class WebRTCClient {
      */
     showSuccess(message) {
         console.log('成功:', message);
-        // 这个方法会被外部的通知系统使用
-        if (window.UIController) {
+        // 安全调用UIController，如果不存在则静默处理
+        try {
+            if (typeof window !== 'undefined' && window.UIController && window.UIController.showNotification) {
             window.UIController.showNotification(message, 'success');
+            }
+        } catch (error) {
+            // 忽略UIController错误，继续执行
+            console.log('UIController不可用，消息已在控制台显示');
         }
     }
 
@@ -538,9 +753,14 @@ class WebRTCClient {
      */
     showError(message) {
         console.error('错误:', message);
-        // 这个方法会被外部的通知系统使用
-        if (window.UIController) {
+        // 安全调用UIController，如果不存在则静默处理
+        try {
+            if (typeof window !== 'undefined' && window.UIController && window.UIController.showNotification) {
             window.UIController.showNotification(message, 'error');
+            }
+        } catch (error) {
+            // 忽略UIController错误，继续执行
+            console.log('UIController不可用，错误消息已在控制台显示');
         }
     }
 

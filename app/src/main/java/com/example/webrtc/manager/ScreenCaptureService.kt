@@ -36,8 +36,8 @@ class ScreenCaptureService : Service() {
         Log.d(TAG, "启动屏幕录制前台服务")
         
         try {
-            val notification = createNotification()
-            startForeground(NOTIFICATION_ID, notification)
+        val notification = createNotification()
+        startForeground(NOTIFICATION_ID, notification)
             Log.i(TAG, "前台服务已成功启动")
         } catch (e: Exception) {
             Log.e(TAG, "启动前台服务失败", e)

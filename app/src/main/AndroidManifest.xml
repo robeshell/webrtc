@@ -18,6 +18,7 @@
     
     <!-- 相机权限（可选） -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     
     <!-- Android 13+ 通知权限 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -35,8 +36,9 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
         
+        <!-- 启动页 -->
         <activity
-            android:name=".MainActivity"
+            android:name=".SplashActivity"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.Webrtc"
@@ -47,6 +49,14 @@
             </intent-filter>
         </activity>
         
+        <!-- 主界面 -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.Webrtc"
+            android:screenOrientation="portrait" />
+        
         <!-- 屏幕捕获服务 -->
         <service
             android:name=".manager.ScreenCaptureService"
@@ -54,12 +64,7 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
         
-        <!-- WebRTC通信服务 -->
-        <service
-            android:name=".service.WebRTCService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+
             
         <!-- 文件提供者 -->
         <provider

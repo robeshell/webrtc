@@ -1,0 +1,589 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+请记住，代码是写给人看的，只是机器恰好可以运行
+
+## 🎯 核心原则
+- 可读性 > 简洁性
+- 可维护性 > 性能（除非性能关键）
+- 一致性 > 个人偏好
+- Clean Architecture 分层严格遵循
+
+## 🏛️ Clean Architecture 架构规范
+
+### 分层结构
+```
+app/src/main/java/com/example/webrtc/
+├── domain/                 # 业务逻辑层（核心层）
+│   ├── model/             # 业务实体
+│   ├── repository/        # 仓库接口
+│   ├── usecase/          # 用例/业务逻辑
+│   └── service/          # 领域服务接口
+├── data/                  # 数据层
+│   ├── repository/        # 仓库实现
+│   ├── source/           # 数据源
+│   │   ├── local/        # 本地数据源（Room）
+│   │   └── remote/       # 远程数据源（API）
+│   └── mapper/           # 数据转换器
+├── ui/                    # 表现层
+│   ├── screens/          # 页面
+│   │   ├── auth/         # 认证页面
+│   │   │   └── components/  # 认证页面专用组件
+│   │   ├── patrol/       # 巡检页面
+│   │   │   └── components/  # 巡检页面专用组件
+│   │   └── ...           # 其他页面模块
+│   ├── components/       # 全局可复用组件
+│   ├── viewmodel/        # ViewModel
+│   ├── theme/            # 主题样式
+│   └── navigation/       # 导航
+├── di/                    # 依赖注入
+├── service/              # Android 服务
+├── protocol/             # 协议处理
+└── util/                 # 工具类
+```
+
+### 依赖规则 ⚠️
+```kotlin
+// ✅ 允许的依赖方向
+UI Layer → Domain Layer
+Data Layer → Domain Layer
+Domain Layer → 不依赖任何层
+
+// ❌ 禁止的依赖
+Domain Layer → UI Layer     // 绝对禁止
+Domain Layer → Data Layer   // 绝对禁止
+UI Layer → Data Layer      // 应通过 Domain 层
+```
+
+### Domain 层规范
+```kotlin
+// ✅ 纯 Kotlin 类，无 Android 依赖
+data class PrecisionRecord(
+    val id: String,
+    val title: String,
+    val createdAt: Long,
+    val audioFilePath: String?
+)
+
+// ✅ 仓库接口定义
+interface PrecisionRecordRepository {
+    suspend fun getAllRecords(): List<PrecisionRecord>
+    suspend fun insertRecord(record: PrecisionRecord)
+    suspend fun deleteRecord(id: String)
+}
+
+// ✅ 用例封装业务逻辑
+class GetPrecisionRecordsUseCase @Inject constructor(
+    private val repository: PrecisionRecordRepository
+) {
+    suspend operator fun invoke(): List<PrecisionRecord> {
+        return repository.getAllRecords()
+    }
+}
+```
+
+### Data 层规范
+```kotlin
+// ✅ 实体类（Room Entity）
+@Entity(tableName = "precision_records")
+data class PrecisionRecordEntity(
+    @PrimaryKey val id: String,
+    val title: String,
+    val createdAt: Long,
+    val audioFilePath: String?
+)
+
+// ✅ 仓库实现
+class PrecisionRecordRepositoryImpl @Inject constructor(
+    private val dao: PrecisionDao
+) : PrecisionRecordRepository {
+    
+    override suspend fun getAllRecords(): List<PrecisionRecord> {
+        return dao.getAllRecords().map { it.toDomainModel() }
+    }
+}
+
+// ✅ 数据转换扩展函数
+fun PrecisionRecordEntity.toDomainModel(): PrecisionRecord {
+    return PrecisionRecord(
+        id = id,
+        title = title,
+        createdAt = createdAt,
+        audioFilePath = audioFilePath
+    )
+}
+```
+
+### UI 层规范
+```kotlin
+// ✅ ViewModel 只依赖 Domain 层
+@HiltViewModel
+class PrecisionMeasureViewModel @Inject constructor(
+    private val getPrecisionRecordsUseCase: GetPrecisionRecordsUseCase,
+    private val deletePrecisionRecordUseCase: DeletePrecisionRecordUseCase
+) : ViewModel() {
+    
+    private val _uiState = MutableStateFlow(PrecisionMeasureUiState())
+    val uiState: StateFlow<PrecisionMeasureUiState> = _uiState.asStateFlow()
+    
+    fun loadRecords() {
+        viewModelScope.launch {
+            try {
+                val records = getPrecisionRecordsUseCase()
+                _uiState.update { it.copy(records = records) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message) }
+            }
+        }
+    }
+}
+```
+
+## ⭐ CRITICAL: Import 管理规范 (零容忍)
+
+### 绝对禁止使用完整包名
+```kotlin
+// ❌ 严重违规 - 立即修复
+val record = com.otq.leakdetector.domain.model.PrecisionRecord(...)
+val data = com.otq.leakdetector.util.FirmwareUtils.hexToBin(file)
+
+// ✅ 正确做法
+import com.otq.leakdetector.domain.model.PrecisionRecord
+import com.otq.leakdetector.util.FirmwareUtils
+
+val record = PrecisionRecord(...)
+val data = FirmwareUtils.hexToBin(file)
+```
+
+### Import 组织顺序
+```kotlin
+// 1. Android 系统库
+import android.content.Context
+import androidx.compose.runtime.*
+
+// 2. 第三方库  
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.StateFlow
+
+// 3. 项目内部包（字母顺序）
+import com.otq.leakdetector.domain.model.AudioFile
+import com.otq.leakdetector.ui.components.BluetoothStatusBar
+```
+
+## 🏗️ ViewModel 状态管理标准
+
+```kotlin
+@HiltViewModel
+class MyViewModel @Inject constructor(
+    private val repository: MyRepository
+) : ViewModel() {
+    
+    // ✅ 标准模式
+    private val _uiState = MutableStateFlow(MyUiState())
+    val uiState: StateFlow<MyUiState> = _uiState.asStateFlow()
+    
+    // ✅ 状态更新
+    fun updateData(newData: String) {
+        _uiState.update { it.copy(data = newData) }
+    }
+    
+    // ✅ 异常处理
+    fun loadData() {
+        viewModelScope.launch {
+            try {
+                val data = repository.getData()
+                _uiState.update { it.copy(data = data, error = null) }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load data: ${e.message}", e)
+                _uiState.update { it.copy(error = e.message) }
+            }
+        }
+    }
+    
+    // ✅ 资源清理
+    override fun onCleared() {
+        super.onCleared()
+        // 清理资源和全局状态
+    }
+    
+    companion object {
+        private const val TAG = "MyViewModel"
+    }
+}
+```
+
+## 🧩 组件组织规范 (强制遵循)
+
+### 组件分类和位置
+```kotlin
+// ✅ 全局可复用组件 - 放在 ui/components/
+ui/components/
+├── BluetoothStatusBar.kt     # 蓝牙状态栏（多页面使用）
+├── AudioPlayerBar.kt         # 音频播放器（多页面使用）
+├── DeleteConfirmDialog.kt    # 删除确认对话框（通用）
+└── LoadingIndicator.kt       # 加载指示器（通用）
+
+// ✅ 页面专用组件 - 放在对应页面的 components/ 子目录
+ui/screens/patrol/
+├── PatrolDetailScreen.kt     # 巡检详情页面
+├── PatrolAddScreen.kt        # 巡检新增页面
+└── components/               # 巡检页面专用组件
+    ├── MapFilterComponent.kt     # 地图筛选组件（仅巡检页面使用）
+    ├── PatrolPointCard.kt        # 巡检点位卡片（仅巡检页面使用）
+    └── PatrolSummaryPanel.kt     # 巡检汇总面板（仅巡检页面使用）
+
+ui/screens/precision/
+├── PrecisionMeasureScreen.kt
+└── components/
+    ├── MeasurementPanel.kt       # 测量面板（仅精测页面使用）
+    └── ResultChart.kt            # 结果图表（仅精测页面使用）
+```
+
+### 组件命名和职责
+```kotlin
+// ✅ 全局组件：功能性命名，职责单一
+@Composable
+fun BluetoothStatusBar(
+    onGoConnect: () -> Unit
+) { /* 蓝牙连接状态显示和操作 */ }
+
+// ✅ 页面专用组件：业务性命名，与页面强相关
+@Composable
+fun MapFilterComponent(
+    showBubble: Boolean,
+    filterType: PointFilterType,
+    onShowBubbleChange: (Boolean) -> Unit,
+    onFilterTypeChange: (PointFilterType) -> Unit
+) { /* 地图筛选功能，仅用于巡检详情页 */ }
+```
+
+### 组件移动规则
+```kotlin
+// 🔄 当组件被多个页面使用时，提升到全局
+// 从 ui/screens/patrol/components/CommonButton.kt
+// 移动到 ui/components/CommonButton.kt
+
+// 🔄 当全局组件只被单个页面使用时，降级到页面专用
+// 从 ui/components/PatrolSpecificDialog.kt  
+// 移动到 ui/screens/patrol/components/PatrolSpecificDialog.kt
+```
+
+### 违规检查
+```kotlin
+// ❌ 错误：页面专用组件放在全局位置
+ui/components/PatrolMapFilter.kt  // 应该在 ui/screens/patrol/components/
+
+// ❌ 错误：全局组件放在页面目录
+ui/screens/patrol/components/LoadingSpinner.kt  // 应该在 ui/components/
+
+// ✅ 正确：组件位置与使用范围匹配
+ui/components/LoadingSpinner.kt                    # 多页面使用
+ui/screens/patrol/components/PatrolMapFilter.kt    # 仅巡检页面使用
+```
+
+## 🎨 Composable 函数规范
+
+```kotlin
+@Composable
+fun MyComponent(
+    // 1. 数据参数
+    title: String,
+    items: List<Item>,
+    
+    // 2. 配置参数
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    
+    // 3. 回调函数
+    onItemClick: (Item) -> Unit,
+    onLongPress: ((Item) -> Unit)? = null
+) {
+    // ✅ 状态收集
+    val uiState by viewModel.uiState.collectAsState()
+    
+    // ✅ 性能优化
+    val expensiveValue = remember(key1, key2) {
+        expensiveCalculation(key1, key2)
+    }
+    
+    LazyColumn(modifier = modifier) {
+        items(
+            items = items,
+            key = { it.id } // ✅ 稳定的 key
+        ) { item ->
+            ItemComponent(item = item)
+        }
+    }
+}
+```
+
+## 📦 依赖管理规范 (强制遵循)
+
+### libs.versions.toml 版本管理
+```toml
+# ✅ 正确：所有依赖版本统一在 [versions] 中管理
+[versions]
+datastore = "1.0.0"
+room = "2.7.1"
+retrofit = "2.9.0"
+
+# ✅ 正确：在 [libraries] 中引用版本
+[libraries]
+androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+```
+
+### build.gradle.kts 依赖引用
+```kotlin
+// ✅ 正确：使用 libs 引用
+implementation(libs.androidx.datastore.preferences)
+implementation(libs.androidx.room.runtime)
+implementation(libs.retrofit)
+
+// ❌ 错误：硬编码版本号
+implementation("androidx.datastore:datastore-preferences:1.0.0")
+implementation("androidx.room:room-runtime:2.7.1")
+```
+
+### 依赖添加流程 (必须遵循)
+1. **第一步**: 在 `gradle/libs.versions.toml` 的 `[versions]` 中添加版本号
+2. **第二步**: 在 `[libraries]` 中定义依赖，使用 `version.ref` 引用版本
+3. **第三步**: 在 `app/build.gradle.kts` 中使用 `libs.xxx` 引用
+
+### 违规示例与修复
+```kotlin
+// ❌ 严重违规 - 立即修复
+implementation("androidx.datastore:datastore-preferences:1.0.0")
+implementation("com.google.code.gson:gson:2.10.1")
+
+// ✅ 正确做法
+// 1. 在 libs.versions.toml 中添加：
+//    [versions]
+//    datastore = "1.0.0"
+//    gson = "2.10.1"
+//    
+//    [libraries]
+//    androidx-datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+//    gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+
+// 2. 在 build.gradle.kts 中使用：
+implementation(libs.androidx.datastore.preferences)
+implementation(libs.gson)
+```
+
+### 🚨 依赖管理检查清单
+- [ ] **所有版本号在 libs.versions.toml 中定义**
+- [ ] **build.gradle.kts 中使用 libs.xxx 引用**
+- [ ] **无硬编码版本号**
+- [ ] **依赖命名遵循项目约定**
+
+## 🔧 依赖注入规范
+
+### Hilt 模块组织
+```kotlin
+// ✅ 数据库模块
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+    
+    @Provides
+    @Singleton
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
+        Room.databaseBuilder(context, AppDatabase::class.java, "app_db").build()
+    
+    @Provides
+    fun provideDao(db: AppDatabase): MyDao = db.myDao()
+}
+
+// ✅ 仓库模块
+@Module
+@InstallIn(SingletonComponent::class)
+object RepositoryModule {
+    
+    @Provides
+    @Singleton
+    fun provideRepository(dao: MyDao): MyRepository = MyRepositoryImpl(dao)
+}
+
+// ✅ 用例模块
+@Module
+@InstallIn(ViewModelComponent::class)
+object UseCaseModule {
+    
+    @Provides
+    fun provideGetRecordsUseCase(
+        repository: MyRepository
+    ): GetRecordsUseCase = GetRecordsUseCase(repository)
+}
+```
+
+### 作用域规范
+```kotlin
+// ✅ 单例：数据库、仓库、服务
+@Singleton
+class MyRepositoryImpl
+
+// ✅ ViewModel 作用域：用例
+@ViewModelScoped  
+class GetRecordsUseCase
+
+// ✅ Activity 作用域：Activity 相关服务
+@ActivityScoped
+class NavigationService
+```
+
+## 📝 日志规范
+
+```kotlin
+companion object {
+    private const val TAG = "ClassName"
+}
+
+// 使用合适的级别
+Log.d(TAG, "Debug info: $info")        // 调试
+Log.i(TAG, "Important event: $event")  // 重要事件
+Log.w(TAG, "Warning: $warning")        // 警告
+Log.e(TAG, "Error: ${e.message}", e)   // 错误（含异常）
+```
+
+## ✅ 代码审查检查清单
+
+### 🚨 强制检查（必须通过）
+- [ ] **无完整包名使用** (com.otq.leakdetector.*.*)
+- [ ] **Import 语句正确添加**
+- [ ] **依赖管理规范遵循** (使用 libs.xxx 引用)
+- [ ] **组件位置正确** (页面专用组件在对应页面目录下)
+- [ ] **StateFlow 模式正确使用**
+- [ ] **资源在 onCleared() 中清理**
+- [ ] **异常用 try-catch 处理**
+- [ ] **日志级别合适**
+- [ ] **Composable 参数顺序正确**
+
+### 🏛️ 架构检查（必须通过）
+- [ ] **Domain 层无 Android 依赖**
+- [ ] **UI 层不直接调用 Data 层**
+- [ ] **依赖方向正确** (UI→Domain←Data)
+- [ ] **用例封装业务逻辑**
+- [ ] **仓库接口在 Domain 层定义**
+- [ ] **数据转换在 Data 层完成**
+- [ ] **ViewModel 只依赖 Domain 层**
+
+### ⚡ 性能检查
+- [ ] LazyList 使用稳定 key
+- [ ] 昂贵计算使用 remember()
+- [ ] 避免不必要重组
+- [ ] 协程使用合适 Dispatcher
+
+### 🔄 自动拒绝标准
+- ❌ 代码中使用 "com.otq.leakdetector."
+- ❌ 缺少必要的 import 语句
+- ❌ 硬编码依赖版本号 (不使用 libs.xxx)
+- ❌ 组件位置错误 (页面专用组件放在全局目录)
+- ❌ 内存泄漏或资源泄漏
+- ❌ 未处理的异常
+- ❌ 错误的状态管理模式
+- ❌ 违反架构分层依赖规则
+- ❌ Domain 层包含 Android 依赖
+- ❌ UI 层直接调用 Data 层
+
+## 🛠️ 工具配置建议
+
+### IDE 设置
+- 启用 "Optimize imports on the fly"
+- 设置 import 自动排序
+- 保存时自动格式化
+
+### 静态分析
+- 使用 ktlint 检查代码风格
+- 使用 detekt 分析代码质量
+
+## 🎯 违规处理
+
+### 严重违规（阻止合并）
+- 使用完整包名调用
+- 内存泄漏
+- 未处理异常
+- 生命周期管理错误
+
+### 一般违规（建议修复）
+- Import 顺序不规范
+- 日志级别不当
+- 命名不规范
+
+---
+
+## 📋 快速参考
+
+### 常见违规修复
+```kotlin
+// ❌ 错误
+val utils = com.otq.leakdetector.util.FirmwareUtils
+val state = com.otq.leakdetector.domain.model.OtaState.Idle
+
+// ✅ 正确
+import com.otq.leakdetector.util.FirmwareUtils
+import com.otq.leakdetector.domain.model.OtaState
+
+val utils = FirmwareUtils
+val state = OtaState.Idle
+```
+
+### 全局状态管理
+```kotlin
+companion object {
+    private var _globalState = mutableStateOf(false)
+    val globalState: Boolean get() = _globalState.value
+    
+    private fun updateGlobalState(isActive: Boolean) {
+        _globalState.value = isActive
+    }
+}
+```
+
+### 架构违规修复
+```kotlin
+// ❌ 错误：ViewModel 直接调用 Data 层
+class MyViewModel @Inject constructor(
+    private val dao: MyDao  // 违规！
+)
+
+// ✅ 正确：通过 Domain 层
+class MyViewModel @Inject constructor(
+    private val getDataUseCase: GetDataUseCase  // 正确！
+)
+
+// ❌ 错误：Domain 层包含 Android 依赖
+import android.content.Context  // 违规！
+class MyUseCase(private val context: Context)
+
+// ✅ 正确：Domain 层纯 Kotlin
+class MyUseCase @Inject constructor(
+    private val repository: MyRepository  // 正确！
+)
+```
+
+### 数据流向规范
+```kotlin
+// ✅ 正确的数据流向
+UI (Composable) 
+  ↓ collectAsState()
+ViewModel 
+  ↓ invoke()
+UseCase 
+  ↓ method call
+Repository Interface (Domain)
+  ↓ implementation
+Repository Impl (Data)
+  ↓ query
+DAO/API
+```
+
+---
+
+**⚠️ 重要提醒**: 这些规范是强制性的，特别是 Import 管理规则。违反将导致代码审查被拒绝。
+
+
+
+**🔄 灵活性说明**: 在遵循这些质量标准的同时，请适应现有项目结构，保持架构一致性。

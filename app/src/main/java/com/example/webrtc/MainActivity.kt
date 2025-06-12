@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -44,6 +45,13 @@ import android.view.View
 import android.graphics.Canvas
 import android.graphics.Paint
 import com.example.webrtc.manager.ViewCapturer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import kotlinx.coroutines.delay
 
 /**
  * WebRTC屏幕投屏主界面
@@ -54,7 +62,7 @@ import com.example.webrtc.manager.ViewCapturer
  * 3. 处理WebRTC连接
  * 4. 显示连接状态
  */
-class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback {
+class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignalingManager.SignalingCallback {
     
     companion object {
         private const val TAG = "MainActivity"
@@ -97,6 +105,12 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
     private var serverUrl by mutableStateOf("192.168.31.121:3000")
     private var isEditingServer by mutableStateOf(false)
     
+    // HTTP客户端
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    
     // 权限请求
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -130,6 +144,10 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             val fullUrl = "http://$serverUrl"
             socketIOSignalingManager.connect(fullUrl)
             Log.i(TAG, "连接到服务器: $fullUrl")
+            
+            // 连接成功后自动获取房间
+            delay(2000) // 等待连接稳定
+            fetchAvailableRoom()
         }
         
         // 启动内容更新定时器
@@ -289,7 +307,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
                 ServerConfigSection()
                 
                 // 投屏模式选择
-                CaptureModeSection()
+                CaptureSection()
                 
                 // 投屏内容预览区域（只在app内容模式下显示）
                 if (captureMode == CaptureMode.APP_CONTENT) {
@@ -384,136 +402,69 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(20.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(bottom = 16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.NetworkCheck,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "连接状态",
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                // 只显示最重要的状态
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    StatusItem("信令服务器", getSignalingStateText(), getSignalingStateColor())
-                    StatusItem("WebRTC连接", getConnectionStateText(), getConnectionStateColor())
-                    StatusItem("屏幕共享", getScreenShareStateText(), getScreenShareStateColor())
-                }
-                
-                // 添加详细状态说明
-                when (screenShareState) {
-                    ScreenShareState.PERMISSION_REQUIRED -> {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        StatusDetailCard(
-                            "• 前台服务已启动，请授权屏幕录制权限...",
-                            MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    ScreenShareState.PREPARING -> {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        StatusDetailCard(
-                            if (captureMode == CaptureMode.FULL_SCREEN) {
-                                "• 权限已获取，正在创建屏幕捕获器..."
-                            } else {
-                                "• 正在初始化App内容捕获..."
-                            },
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-                    ScreenShareState.SHARING -> {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        StatusDetailCard(
-                            "• 投屏进行中 - ${if (captureMode == CaptureMode.FULL_SCREEN) "超高画质(1920×1080@30fps)" else "优化模式(1024×576@20fps)"}",
-                            MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    ScreenShareState.ERROR -> {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        StatusDetailCard(
-                            "• 投屏出现错误，请检查权限或重试",
-                            MaterialTheme.colorScheme.error
-                        )
-                    }
-                    else -> {}
+                    // 服务器状态
+                    StatusChip("服务器", getSignalingStateText(), getSignalingStateColor())
+                    
+                    // 投屏状态
+                    StatusChip("投屏", getScreenShareStateText(), getScreenShareStateColor())
                 }
             }
         }
     }
     
     @Composable
-    fun StatusDetailCard(text: String, color: ComposeColor) {
+    fun StatusChip(label: String, status: String, color: ComposeColor) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(
                 containerColor = color.copy(alpha = 0.1f)
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
-            Text(
-                text = text,
-                fontSize = 13.sp,
-                color = color,
-                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                modifier = Modifier.padding(16.dp)
-            )
-        }
-    }
-    
-    @Composable
-    fun StatusItem(label: String, status: String, color: ComposeColor) {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = label,
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    text = "$label: $status",
+                    fontSize = 12.sp,
+                    color = color,
                     fontWeight = FontWeight.Medium
                 )
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(color)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = status,
-                        fontSize = 15.sp,
-                        color = color,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
             }
         }
     }
@@ -532,169 +483,77 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
                 modifier = Modifier.padding(24.dp)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 16.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Cloud,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "服务器配置",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    
-                    FloatingActionButton(
-                        onClick = { 
-                            if (isEditingServer) {
-                                // 确认修改，重新连接服务器
-                                isEditingServer = false
-                                lifecycleScope.launch {
-                                    try {
-                                        Log.i(TAG, "确认服务器地址修改，准备重新连接: $serverUrl")
-                                        socketIOSignalingManager.disconnect()
-                                        kotlinx.coroutines.delay(1000)
-                                        val fullUrl = "http://$serverUrl"
-                                        Log.i(TAG, "开始连接到新服务器: $fullUrl")
-                                        socketIOSignalingManager.connect(fullUrl)
-                                    } catch (e: Exception) {
-                                        Log.e(TAG, "重新连接服务器失败", e)
-                                        errorMessage = "连接服务器失败: ${e.message}"
-                                    }
-                                }
-                            } else {
-                                // 进入编辑模式
-                                isEditingServer = true
-                            }
-                        },
-                        modifier = Modifier.size(48.dp),
-                        containerColor = if (isEditingServer) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isEditingServer) Icons.Default.Check else Icons.Default.Edit,
-                            contentDescription = if (isEditingServer) "确认并重连" else "编辑",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "服务器配置",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
                 }
-                
-                Spacer(modifier = Modifier.height(20.dp))
                 
                 if (isEditingServer) {
                     OutlinedTextField(
                         value = serverUrl,
                         onValueChange = { serverUrl = it },
-                        label = { Text("服务器地址:端口") },
-                        placeholder = { Text("例如: 192.168.1.100:3000") },
+                        label = { Text("服务器地址") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        ),
                         trailingIcon = {
-                            IconButton(
-                                onClick = {
+                            Row {
+                                IconButton(onClick = { 
                                     isEditingServer = false
                                     // 重新连接服务器
                                     lifecycleScope.launch {
-                                        try {
-                                            Log.i(TAG, "准备重新连接服务器，当前地址: $serverUrl")
-                                            socketIOSignalingManager.disconnect()
-                                            kotlinx.coroutines.delay(1000)
-                                            val fullUrl = "http://$serverUrl"
-                                            Log.i(TAG, "开始连接到新服务器: $fullUrl")
-                                            socketIOSignalingManager.connect(fullUrl)
-                                        } catch (e: Exception) {
-                                            Log.e(TAG, "重新连接服务器失败", e)
-                                            errorMessage = "连接服务器失败: ${e.message}"
-                                        }
+                                        socketIOSignalingManager.disconnect()
+                                        kotlinx.coroutines.delay(500)
+                                        socketIOSignalingManager.connect("http://$serverUrl")
                                     }
+                                }) {
+                                    Icon(Icons.Default.Check, "确认")
                                 }
-                            ) {
-                                Icon(Icons.Default.Refresh, "重新连接")
+                                IconButton(onClick = { isEditingServer = false }) {
+                                    Icon(Icons.Default.Close, "取消")
+                                }
                             }
                         }
                     )
                 } else {
-                    Card(
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "当前服务器",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "http://$serverUrl",
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(getSignalingStateColor().copy(alpha = 0.1f))
-                                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                                ) {
-                                    Text(
-                                        text = getSignalingStateText(),
-                                        fontSize = 12.sp,
-                                        color = getSignalingStateColor(),
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
+                        Text(
+                            text = serverUrl,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { isEditingServer = true }) {
+                            Icon(
+                                Icons.Default.Edit,
+                                "编辑",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                Text(
-                    text = "💻 Web客户端地址: http://$serverUrl",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                        .padding(12.dp)
-                )
             }
         }
     }
     
     @Composable
-    fun CaptureModeSection() {
+    fun CaptureSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -708,19 +567,20 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(bottom = 16.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Settings,
+                        imageVector = Icons.Default.CameraAlt,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "投屏模式",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 
@@ -728,136 +588,48 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // 只投屏app内容
+                    // App内容模式
                     FilterChip(
-                        onClick = { 
-                            captureMode = CaptureMode.APP_CONTENT
-                            updateConfigForCaptureMode()
-                        },
-                        label = { 
-                            Text(
-                                "仅App内容",
-                                fontWeight = FontWeight.Medium
-                            ) 
-                        },
+                        onClick = { captureMode = CaptureMode.APP_CONTENT },
+                        label = { Text("App内容") },
                         selected = captureMode == CaptureMode.APP_CONTENT,
                         modifier = Modifier.weight(1f),
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.Apps,
+                                Icons.Default.PhoneAndroid,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                        )
+                        }
                     )
                     
-                    // 投屏整个屏幕
+                    // 全屏模式
                     FilterChip(
-                        onClick = { 
-                            captureMode = CaptureMode.FULL_SCREEN
-                            updateConfigForCaptureMode()
-                        },
-                        label = { 
-                            Text(
-                                "整个屏幕",
-                                fontWeight = FontWeight.Medium
-                            ) 
-                        },
+                        onClick = { captureMode = CaptureMode.FULL_SCREEN },
+                        label = { Text("全屏") },
                         selected = captureMode == CaptureMode.FULL_SCREEN,
                         modifier = Modifier.weight(1f),
                         leadingIcon = {
                             Icon(
-                                imageVector = Icons.Default.FullscreenExit,
+                                Icons.Default.Fullscreen,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                        )
+                        }
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            text = if (captureMode == CaptureMode.APP_CONTENT) 
-                                "📱 App内容模式 - 优化性能" 
-                            else 
-                                "🎬 全屏模式 - 超高画质",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = if (captureMode == CaptureMode.APP_CONTENT) 
-                                "1024×576, 20fps, 1.5Mbps" 
-                            else 
-                                "1920×1080, 30fps, 6Mbps",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-                }
-                
-                // 添加权限选择提示
-                if (captureMode == CaptureMode.FULL_SCREEN) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = MaterialTheme.colorScheme.tertiary
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "权限选择提示",
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.tertiary
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "如果系统询问录制范围，请选择整个屏幕以获得最佳效果",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                                lineHeight = 16.sp
-                            )
-                        }
-                    }
-                }
+                Text(
+                    text = if (captureMode == CaptureMode.APP_CONTENT) {
+                        "只投屏当前应用内容，1080p超高清画质"
+                    } else {
+                        "投屏整个屏幕，需要系统权限"
+                    },
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
             }
         }
     }
@@ -867,94 +639,75 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            )
         ) {
             Column(
                 modifier = Modifier.padding(24.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(bottom = 16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Preview,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "投屏内容预览",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 
-                // 投屏内容区域
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(220.dp),
-                    shape = RoundedCornerShape(16.dp),
+                        .height(200.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+                    )
                 ) {
                     Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                androidx.compose.ui.graphics.Brush.verticalGradient(
-                                    colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-                                    )
-                                )
-                            ),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        // 使用AndroidView来创建一个可以被录制的View
                         AndroidView(
                             factory = { context ->
                                 TextView(context).apply {
-                                    text = "🎥 实时投屏内容区域 🎥\n\n正在初始化..."
-                                    textAlignment = TextView.TEXT_ALIGNMENT_CENTER
-                                    textSize = 14f
-                                    setTextColor(android.graphics.Color.BLACK)
-                                    setPadding(24, 24, 24, 24)
-                                    background = null
+                                    text = "这是投屏内容区域\n时间: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(contentUpdateTime))}"
+                                    textSize = 16f
+                                    setTextColor(Color.BLACK)
+                                    gravity = android.view.Gravity.CENTER
+                                    setBackgroundColor(Color.WHITE)
+                                    setPadding(32, 32, 32, 32)
                                     screenContentView = this
-                                    // 立即更新一次内容
-                                    post { updateScreenContentView() }
                                 }
+                            },
+                            update = { view ->
+                                view.text = "这是投屏内容区域\n时间: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(contentUpdateTime))}"
                             },
                             modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)
-                    ),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                ) {
-                    Text(
-                        text = "💡 只有上方这个区域会被投屏到Web端",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
+                Text(
+                    text = "此区域的内容将被投屏到观看端",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
@@ -970,89 +723,91 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier.padding(24.dp)
             ) {
-                // 主要控制按钮
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(bottom = 20.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ControlCamera,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "投屏控制",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                
+                // 主控制按钮
                 Button(
                     onClick = { toggleScreenShare() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(64.dp),
-                    enabled = signalingState == SignalingState.CONNECTED && screenShareState != ScreenShareState.PREPARING,
+                    shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = when {
-                            screenShareState == ScreenShareState.PREPARING -> MaterialTheme.colorScheme.secondary
-                            isScreenSharing -> MaterialTheme.colorScheme.error 
-                            else -> MaterialTheme.colorScheme.primary
+                        containerColor = if (isScreenSharing) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.primary
                         }
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = when {
-                                screenShareState == ScreenShareState.PREPARING -> Icons.Default.HourglassEmpty
-                                isScreenSharing -> Icons.Default.Stop 
-                                else -> Icons.Default.PlayArrow
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = when {
-                                screenShareState == ScreenShareState.PREPARING -> "正在准备..."
-                                screenShareState == ScreenShareState.PERMISSION_REQUIRED -> "需要权限"
-                                isScreenSharing -> "停止投屏"
-                                else -> "开始投屏"
-                            },
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-                
-                // 连接/断开信令服务器
-                OutlinedButton(
-                    onClick = { toggleSignalingConnection() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = MaterialTheme.colorScheme.primary
-                    ),
-                    border = BorderStroke(
-                        width = 1.5.dp,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
                     )
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    Icon(
+                        imageVector = if (isScreenSharing) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = if (isScreenSharing) "停止投屏" else "开始投屏",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // 房间状态显示
+                if (roomId.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        )
                     ) {
-                        Icon(
-                            imageVector = if (signalingState == SignalingState.CONNECTED) 
-                                Icons.Default.CloudOff 
-                            else 
-                                Icons.Default.Cloud,
-                            contentDescription = null,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = if (signalingState == SignalingState.CONNECTED) 
-                                "断开服务器" 
-                            else 
-                                "连接服务器",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MeetingRoom,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "已获取房间",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = roomId,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -1074,91 +829,126 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(bottom = 16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.MeetingRoom,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(20.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "房间信息",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                // 房间ID
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedTextField(
-                        value = roomId,
-                        onValueChange = { roomId = it },
-                        label = { Text("房间ID") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !isScreenSharing && signalingState == SignalingState.CONNECTED,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        ),
-                        trailingIcon = {
-                            IconButton(
-                                onClick = { generateRandomRoomId() }
-                            ) {
-                                Icon(Icons.Default.Refresh, "生成随机房间ID")
-                            }
-                        }
-                    )
-                    
-                    OutlinedTextField(
-                        value = userId,
-                        onValueChange = { userId = it },
-                        label = { Text("用户ID") },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = false,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "房间ID",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
-                    )
+                        Text(
+                            text = roomId.ifEmpty { "未设置" },
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     
-                    if (remoteUserId.isNotEmpty()) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(20.dp),
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text(
-                                        text = "远程用户已连接",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                    )
-                                    Text(
-                                        text = remoteUserId,
-                                        fontSize = 16.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
+                    Row {
+                        // 刷新房间按钮
+                        IconButton(
+                            onClick = {
+                                lifecycleScope.launch {
+                                    fetchAvailableRoom()
                                 }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                "刷新房间",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        // 复制房间ID按钮
+                        IconButton(
+                            onClick = {
+                                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                                val clip = android.content.ClipData.newPlainText("房间ID", roomId)
+                                clipboard.setPrimaryClip(clip)
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                "复制",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // 用户ID
+                Column {
+                    Text(
+                        text = "用户ID",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = userId,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                
+                // 观看者信息
+                if (remoteUserId.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Visibility,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "观看者已连接",
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                                Text(
+                                    text = remoteUserId,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
                     }
@@ -1226,35 +1016,74 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
      * 开始屏幕投屏
      */
     private fun startScreenShare() {
-        if (roomId.isBlank()) {
-            errorMessage = "请输入房间ID"
+        // 🔧 关键修复：防止重复调用
+        if (isScreenSharing || shouldStartAfterPermission) {
+            Log.w(TAG, "投屏已在进行中或等待权限，跳过重复调用")
             return
         }
         
-        // 更新配置参数根据投屏模式
-        updateConfigForCaptureMode()
+        // 如果房间ID为空，自动获取可用房间
+        if (roomId.isBlank()) {
+            Log.i(TAG, "房间ID为空，自动获取可用房间...")
+            lifecycleScope.launch {
+                try {
+                    fetchAvailableRoom()
+                    kotlinx.coroutines.delay(1000)
+                    if (roomId.isNotBlank()) {
+                        startScreenShareInternal()
+                    } else {
+                        errorMessage = "无法获取可用房间，请检查服务器连接"
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "自动获取房间失败", e)
+                    errorMessage = "自动获取房间失败，请检查服务器连接"
+                }
+            }
+            return
+        }
         
-        // 设置权限获取后自动继续的标志
+        startScreenShareInternal()
+    }
+    
+    /**
+     * 内部投屏启动逻辑
+     */
+    private fun startScreenShareInternal() {
+        // 🔧 再次检查状态，防止并发调用
+        if (isScreenSharing || shouldStartAfterPermission) {
+            Log.w(TAG, "投屏状态检查：已在进行中，取消启动")
+            return
+        }
+        
+        updateConfigForCaptureMode()
         shouldStartAfterPermission = true
         
         lifecycleScope.launch {
             try {
-                Log.i(TAG, "正在开始屏幕投屏...")
+                Log.i(TAG, "正在开始屏幕投屏，房间ID: $roomId")
                 
-                // 首先停止任何现有的投屏
+                // 🔧 关键修复：检查WebRTC初始化状态
+                if (!webRTCManager.isInitialized.value) {
+                    Log.w(TAG, "WebRTC未初始化，重新初始化...")
+                    val success = webRTCManager.initialize()
+                    if (!success) {
+                        errorMessage = "WebRTC重新初始化失败"
+                        shouldStartAfterPermission = false
+                        return@launch
+                    }
+                }
+                
                 if (isScreenSharing) {
                     Log.d(TAG, "停止现有的投屏会话")
                     stopScreenShare()
-                    kotlinx.coroutines.delay(500) // 等待清理完成
+                    kotlinx.coroutines.delay(500)
                 }
                 
                 if (captureMode == CaptureMode.APP_CONTENT) {
-                    // App内容模式：直接开始投屏，不需要系统权限
                     Log.i(TAG, "使用App内容模式，直接开始投屏...")
                     shouldStartAfterPermission = false
                     continueScreenShare()
                 } else {
-                    // 全屏模式：需要请求系统权限
                     Log.i(TAG, "使用全屏模式，请求屏幕录制权限...")
                     screenCaptureManager.requestScreenCapturePermission(this@MainActivity)
                 }
@@ -1275,14 +1104,11 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             Log.i(TAG, "开始创建屏幕投屏，模式: ${if (captureMode == CaptureMode.APP_CONTENT) "App内容" else "全屏"}")
             
             val screenCapturer = if (captureMode == CaptureMode.APP_CONTENT) {
-                // 创建View捕获器
                 Log.d(TAG, "创建View捕获器...")
                 createViewCapturer()
             } else {
-                // 创建屏幕捕获器
                 Log.d(TAG, "创建屏幕捕获器...")
                 
-                // 检查权限状态
                 if (!screenCaptureManager.hasScreenCapturePermission()) {
                     Log.e(TAG, "屏幕录制权限未获取")
                     errorMessage = "屏幕录制权限未获取，请重新授权"
@@ -1309,31 +1135,25 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             
             Log.i(TAG, "屏幕捕获器创建成功")
             
-            // 设置屏幕捕获器到WebRTC
             webRTCManager.setScreenCapturer(screenCapturer)
             
-            // 创建PeerConnection
             if (!webRTCManager.createPeerConnection()) {
                 errorMessage = "创建WebRTC连接失败"
                 shouldStartAfterPermission = false
                 return
             }
             
-            // 创建本地媒体流
             if (!webRTCManager.createLocalMediaStream()) {
                 errorMessage = "创建本地媒体流失败"
                 shouldStartAfterPermission = false
                 return
             }
             
-            // 加入房间
             socketIOSignalingManager.joinRoom(roomId, userId, "broadcaster")
             
-            // 确保状态更新为SHARING
             if (captureMode == CaptureMode.APP_CONTENT) {
                 screenCaptureManager.setScreenShareState(ScreenShareState.SHARING)
             } else {
-                // 全屏模式由ScreenCaptureManager自动管理状态
                 Log.d(TAG, "全屏模式，等待ScreenCaptureManager更新状态...")
             }
             
@@ -1343,7 +1163,6 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             Log.e(TAG, "创建屏幕投屏失败", e)
             errorMessage = "创建屏幕投屏失败: ${e.message}"
             shouldStartAfterPermission = false
-            // 重置状态
             screenCaptureManager.setScreenShareState(ScreenShareState.ERROR)
         }
     }
@@ -1358,8 +1177,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
             return null
         }
         
-        // 创建SurfaceTexture录制器
-        return ViewCapturer(contentView)
+        return ViewCapturer(contentView as View)
     }
     
     /**
@@ -1368,24 +1186,45 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
     private fun stopScreenShare() {
         lifecycleScope.launch {
             try {
-                Log.i(TAG, "开始停止屏幕投屏...")
+                Log.i(TAG, "🛑 开始停止屏幕投屏...")
+                
+                // 🔧 关键修复：防止重复停止
+                if (!isScreenSharing && screenShareState == ScreenShareState.STOPPED) {
+                    Log.w(TAG, "投屏已经停止，跳过重复操作")
+                    return@launch
+                }
                 
                 // 重置标志
                 shouldStartAfterPermission = false
                 
-                // 停止屏幕捕获
-                screenCaptureManager.stopScreenCapture()
-                
-                // 停止WebRTC
-                webRTCManager.stopScreenCapture()
-                
-                // 离开房间
-                socketIOSignalingManager.leaveRoom()
-                
-                // 确保状态重置
+                // 1. 先更新UI状态，避免用户重复点击
                 screenCaptureManager.setScreenShareState(ScreenShareState.STOPPED)
                 
-                Log.i(TAG, "屏幕投屏已停止")
+                // 2. 离开房间（先断开信令）
+                try {
+                    socketIOSignalingManager.leaveRoom()
+                    Log.d(TAG, "✅ 已离开信令房间")
+                } catch (e: Exception) {
+                    Log.w(TAG, "离开房间异常: ${e.message}")
+                }
+                
+                // 3. 停止屏幕捕获
+                try {
+                    screenCaptureManager.stopScreenCapture()
+                    Log.d(TAG, "✅ 屏幕捕获已停止")
+                } catch (e: Exception) {
+                    Log.w(TAG, "停止屏幕捕获异常: ${e.message}")
+                }
+                
+                // 4. 最后关闭WebRTC连接
+                try {
+                    webRTCManager.close()
+                    Log.d(TAG, "✅ WebRTC连接已关闭")
+                } catch (e: Exception) {
+                    Log.w(TAG, "关闭WebRTC异常: ${e.message}")
+                }
+                
+                Log.i(TAG, "✅ 屏幕投屏已完全停止")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "停止屏幕投屏失败", e)
@@ -1413,8 +1252,48 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
     /**
      * 生成随机房间ID
      */
-    private fun generateRandomRoomId() {
-        roomId = "room_${UUID.randomUUID().toString().take(8)}"
+    
+    /**
+     * 🆕 从服务器获取可用房间号
+     */
+    private suspend fun fetchAvailableRoom() {
+        try {
+            val request = Request.Builder()
+                .url("http://$serverUrl/api/available-room")
+                .build()
+            
+            val response = withContext(Dispatchers.IO) {
+                okHttpClient.newCall(request).execute()
+            }
+            
+            if (response.isSuccessful) {
+                val responseBody = response.body?.string()
+                Log.d(TAG, "获取房间响应: $responseBody")
+                if (!responseBody.isNullOrEmpty()) {
+                    val json = JSONObject(responseBody)
+                    val success = json.optBoolean("success", false)
+                    if (success) {
+                        val availableRoomId = json.optString("roomId")
+                        if (availableRoomId.isNotEmpty()) {
+                            roomId = availableRoomId
+                            val waitingViewers = json.optInt("waitingViewers", 0)
+                            val message = json.optString("message", "")
+                            Log.i(TAG, "获取到可用房间: $roomId，等待观看者: $waitingViewers")
+                            Log.i(TAG, "服务器消息: $message")
+                        } else {
+                            Log.w(TAG, "服务器返回空房间ID")
+                        }
+                    } else {
+                        val message = json.optString("message", "没有可用房间")
+                        Log.i(TAG, "服务器响应: $message")
+                    }
+                }
+            } else {
+                Log.w(TAG, "获取可用房间失败: ${response.code}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "获取可用房间异常", e)
+        }
     }
     
     /**
@@ -1572,8 +1451,8 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
         Log.i(TAG, "离开房间: $roomId")
     }
     
-    override fun onUserJoined(userId: String) {
-        Log.i(TAG, "用户加入: $userId")
+    override fun onUserJoined(userId: String, userType: String) {
+        Log.i(TAG, "用户加入: $userId, 类型: $userType")
         remoteUserId = userId
         
         // 作为投屏方，等待观看方发送Offer
@@ -1587,7 +1466,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
         }
     }
     
-    override fun onOfferReceived(sdp: String, fromUserId: String) {
+    override fun onOfferReceived(fromUserId: String, sdp: String) {
         Log.d(TAG, "收到Offer: $fromUserId")
         remoteUserId = fromUserId
         
@@ -1595,21 +1474,28 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
         lifecycleScope.launch {
             try {
                 val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
+                Log.d(TAG, "🔄 开始创建Answer响应...")
                 val answer = webRTCManager.createAnswer(offer)
                 if (answer != null) {
-                    webRTCManager.setLocalDescription(answer)
-                    socketIOSignalingManager.sendAnswer(answer.description, fromUserId)
-                    Log.d(TAG, "Answer已发送给: $fromUserId")
+                    Log.d(TAG, "✅ Answer创建成功，SDP长度: ${answer.description.length}")
+                    val setResult = webRTCManager.setLocalDescription(answer)
+                    if (setResult) {
+                        socketIOSignalingManager.sendAnswer(answer.description, fromUserId)
+                        Log.d(TAG, "Answer已发送给: $fromUserId")
+                    } else {
+                        Log.e(TAG, "❌ 设置本地描述失败")
+                    }
                 } else {
-                    Log.e(TAG, "创建Answer失败")
+                    Log.e(TAG, "❌ 创建Answer失败 - answer为null")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "处理Offer失败", e)
+                errorMessage = "处理连接请求失败: ${e.message}"
             }
         }
     }
     
-    override fun onAnswerReceived(sdp: String, fromUserId: String) {
+    override fun onAnswerReceived(fromUserId: String, sdp: String) {
         Log.d(TAG, "收到Answer: $fromUserId")
         lifecycleScope.launch {
             val answer = SessionDescription(SessionDescription.Type.ANSWER, sdp)
@@ -1617,7 +1503,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
         }
     }
     
-    override fun onIceCandidateReceived(candidate: String, sdpMid: String, sdpMLineIndex: Int, fromUserId: String) {
+    override fun onIceCandidateReceived(fromUserId: String, candidate: String, sdpMid: String, sdpMLineIndex: Int) {
         Log.d(TAG, "收到ICE候选: $fromUserId")
         val iceCandidate = IceCandidate(sdpMid, sdpMLineIndex, candidate)
         webRTCManager.addIceCandidate(iceCandidate)
@@ -1644,21 +1530,64 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SignalingCallback
      * 更新配置参数根据投屏模式
      */
     private fun updateConfigForCaptureMode() {
-        if (captureMode == CaptureMode.FULL_SCREEN) {
+        // 🚨 强制调试：开始配置更新
+        Log.e(TAG, "🚨🚨🚨 updateConfigForCaptureMode 强制调试开始 🚨🚨🚨")
+        Log.e(TAG, "📐 当前投屏模式: $captureMode")
+        Log.e(TAG, "📐 当前配置: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps")
+        
+        // 🔧 关键修复：避免重复更新相同配置
+        val newConfig = if (captureMode == CaptureMode.FULL_SCREEN) {
             // 全屏模式：高画质配置
-            config.videoWidth = WebRTCConfig.Video.FULLSCREEN_WIDTH
-            config.videoHeight = WebRTCConfig.Video.FULLSCREEN_HEIGHT
-            config.videoFps = WebRTCConfig.Video.FULLSCREEN_FPS
-            config.videoBitrate = WebRTCConfig.Video.FULLSCREEN_BITRATE
-            Log.i(TAG, "🎬 全屏超高画质模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps (${config.videoBitrate/1000f}Mbps)")
+            config.copy(
+                videoWidth = WebRTCConfig.Video.FULLSCREEN_WIDTH,
+                videoHeight = WebRTCConfig.Video.FULLSCREEN_HEIGHT,
+                videoFps = WebRTCConfig.Video.FULLSCREEN_FPS,
+                videoBitrate = WebRTCConfig.Video.FULLSCREEN_BITRATE
+            )
         } else {
             // App内容模式：优化配置
-            config.videoWidth = WebRTCConfig.Video.DEFAULT_WIDTH
-            config.videoHeight = WebRTCConfig.Video.DEFAULT_HEIGHT
-            config.videoFps = WebRTCConfig.Video.DEFAULT_FPS
-            config.videoBitrate = WebRTCConfig.Video.DEFAULT_BITRATE
-            Log.i(TAG, "📱 App内容优化模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps (${config.videoBitrate/1000f}Mbps)")
+            config.copy(
+                videoWidth = WebRTCConfig.Video.DEFAULT_WIDTH,
+                videoHeight = WebRTCConfig.Video.DEFAULT_HEIGHT,
+                videoFps = WebRTCConfig.Video.DEFAULT_FPS,
+                videoBitrate = WebRTCConfig.Video.DEFAULT_BITRATE
+            )
         }
+        
+        Log.e(TAG, "📐 新配置目标: ${newConfig.videoWidth}×${newConfig.videoHeight}@${newConfig.videoFps}fps")
+        
+        // 只有当配置确实发生变化时才更新
+        val currentConfig = config
+        if (currentConfig.videoWidth != newConfig.videoWidth ||
+            currentConfig.videoHeight != newConfig.videoHeight ||
+            currentConfig.videoFps != newConfig.videoFps ||
+            currentConfig.videoBitrate != newConfig.videoBitrate) {
+            
+            config.videoWidth = newConfig.videoWidth
+            config.videoHeight = newConfig.videoHeight
+            config.videoFps = newConfig.videoFps
+            config.videoBitrate = newConfig.videoBitrate
+            
+            Log.e(TAG, "✅ 配置已更新: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps")
+            
+            if (captureMode == CaptureMode.FULL_SCREEN) {
+                Log.i(TAG, "🎬 全屏超高画质模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps (${config.videoBitrate/1000f}Mbps)")
+            } else {
+                Log.i(TAG, "📱 App内容超高清模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps (${config.videoBitrate/1000f}Mbps)")
+            }
+            
+            // 🔧 关键修复：只有在WebRTC已初始化时才更新配置
+            if (::webRTCManager.isInitialized && webRTCManager.isInitialized.value) {
+                Log.e(TAG, "🔄 通知WebRTCManager更新配置...")
+                webRTCManager.updateConfig(config)
+            } else {
+                Log.d(TAG, "WebRTC未初始化，配置将在初始化时应用")
+            }
+        } else {
+            Log.e(TAG, "⚠️ 配置未发生变化，跳过更新")
+        }
+        
+        Log.e(TAG, "🚨🚨🚨 updateConfigForCaptureMode 强制调试结束 🚨🚨🚨")
     }
 }
 

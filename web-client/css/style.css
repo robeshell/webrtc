@@ -214,7 +214,17 @@ input[type="text"]:focus {
 
 .btn-danger:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(245, 101, 101, 0.3);
+    box-shadow: 0 8px 25px rgba(220, 38, 127, 0.3);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(72, 187, 120, 0.3);
 }
 
 .btn-small {
@@ -596,11 +606,85 @@ input[type="text"]:focus {
 
 @keyframes slideUp {
     from {
-        transform: translateY(20px);
         opacity: 0;
+        transform: translateY(20px);
     }
     to {
-        transform: translateY(0);
         opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* 🆕 房间显示样式 */
+.room-display {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 16px;
+    padding: 2rem;
+    margin: 2rem 0;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(10px);
+}
+
+.room-label {
+    font-size: 1rem;
+    color: #718096;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.room-number {
+    font-size: 3rem;
+    font-weight: 800;
+    color: #2d3748;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.2em;
+    margin-bottom: 1rem;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.room-hint {
+    font-size: 1rem;
+    color: #4a5568;
+    font-weight: 500;
+}
+
+/* 🆕 自动刷新提示 */
+.auto-refresh-hint {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: rgba(72, 187, 120, 0.1);
+    border: 1px solid rgba(72, 187, 120, 0.2);
+    border-radius: 8px;
+    color: #22543d;
+}
+
+.auto-refresh-hint small {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* 🆕 响应式设计优化 */
+@media (max-width: 768px) {
+    .room-number {
+        font-size: 2.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .room-number {
+        font-size: 2rem;
+        letter-spacing: 0.1em;
+    }
+    
+    .room-display {
+        padding: 1.5rem;
+        margin: 1rem 0;
     }
 } 

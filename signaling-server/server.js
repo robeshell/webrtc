@@ -399,10 +399,117 @@ app.get('/api/status', (req, res) => {
 
 // 获取房间列表
 app.get('/api/rooms', (req, res) => {
-    const roomList = Array.from(rooms.keys()).map(roomId => 
-        RoomManager.getRoomInfo(roomId)
-    );
-    res.json({ rooms: roomList });
+    try {
+        // 清理过期房间
+        RoomManager.cleanupExpiredRooms();
+        
+        const roomList = Array.from(rooms.entries()).map(([roomId, room]) => ({
+            roomId,
+            userCount: room.users.size,
+            maxUsers: room.settings.maxUsers,
+            createdAt: room.createdAt,
+            hasViewer: Array.from(room.users).some(socketId => {
+                const user = users.get(socketId);
+                return user && user.userType === 'viewer';
+            }),
+            hasBroadcaster: Array.from(room.users).some(socketId => {
+                const user = users.get(socketId);
+                return user && user.userType === 'broadcaster';
+            })
+        }));
+        
+        res.json({
+            success: true,
+            rooms: roomList,
+            totalRooms: roomList.length
+        });
+    } catch (error) {
+        Logger.error('获取房间列表失败', error);
+        res.status(500).json({
+            success: false,
+            error: '获取房间列表失败'
+        });
+    }
+});
+
+// 获取可用房间号（为Android端提供）
+app.get('/api/available-room', (req, res) => {
+    try {
+        // 清理过期房间
+        RoomManager.cleanupExpiredRooms();
+        
+        // 查找有观看者但没有投屏者的房间
+        const availableRooms = Array.from(rooms.entries())
+            .filter(([roomId, room]) => {
+                const hasViewer = Array.from(room.users).some(socketId => {
+                    const user = users.get(socketId);
+                    return user && user.userType === 'viewer';
+                });
+                const hasBroadcaster = Array.from(room.users).some(socketId => {
+                    const user = users.get(socketId);
+                    return user && user.userType === 'broadcaster';
+                });
+                return hasViewer && !hasBroadcaster; // 有观看者但没有投屏者
+            })
+            .map(([roomId, room]) => ({
+                roomId,
+                userCount: room.users.size,
+                waitingViewers: Array.from(room.users).filter(socketId => {
+                    const user = users.get(socketId);
+                    return user && user.userType === 'viewer';
+                }).length
+            }));
+        
+        if (availableRooms.length > 0) {
+            // 返回等待观看者最多的房间
+            const bestRoom = availableRooms.sort((a, b) => b.waitingViewers - a.waitingViewers)[0];
+            res.json({
+                success: true,
+                roomId: bestRoom.roomId,
+                waitingViewers: bestRoom.waitingViewers,
+                message: `找到房间 ${bestRoom.roomId}，有 ${bestRoom.waitingViewers} 个观看者在等待`
+            });
+        } else {
+            res.json({
+                success: false,
+                message: '当前没有等待投屏的房间',
+                suggestion: '可以创建新房间或等待观看者加入'
+            });
+        }
+    } catch (error) {
+        Logger.error('获取可用房间失败', error);
+        res.status(500).json({
+            success: false,
+            error: '获取可用房间失败'
+        });
+    }
+});
+
+// 生成新房间号
+app.post('/api/create-room', (req, res) => {
+    try {
+        // 生成6位随机房间号
+        const roomId = Math.random().toString(36).substr(2, 6).toUpperCase();
+        
+        // 确保房间号不重复
+        let attempts = 0;
+        while (rooms.has(roomId) && attempts < 10) {
+            roomId = Math.random().toString(36).substr(2, 6).toUpperCase();
+            attempts++;
+        }
+        
+        res.json({
+            success: true,
+            roomId,
+            message: `新房间 ${roomId} 已准备就绪`
+        });
+    } catch (error) {
+        Logger.error('创建房间失败', error);
+        res.status(500).json({
+            success: false,
+            error: '创建房间失败'
+        });
+    }
 });
 
 // 获取特定房间信息
