@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.webrtc.config.DynamicConfig
 import com.example.webrtc.config.WebRTCConfig
@@ -126,6 +127,12 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // 设置状态栏样式
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        // 设置状态栏文字为深色，确保可见性
+        WindowCompat.getInsetsController(window, window.decorView)?.isAppearanceLightStatusBars = true
         
         // 初始化配置
         updateConfigForCaptureMode()
@@ -284,27 +291,37 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
         }
     }
     
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     fun MainScreen() {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = MaterialTheme.colorScheme.background
-        ) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Android屏幕共享",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxSize()
+        ) { paddingValues ->
             Column(
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // 标题区域
-                HeaderSection()
-                
-                // 状态区域
+                // 连接状态
                 StatusSection()
-                
-                // 服务器配置区域
-                ServerConfigSection()
                 
                 // 投屏模式选择
                 CaptureSection()
@@ -314,11 +331,14 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     ScreenContentSection()
                 }
                 
-                // 控制区域
-                ControlSection()
-                
                 // 房间信息区域
                 RoomSection()
+                
+                // 投屏控制区域
+                ControlSection()
+                
+                // 服务器配置区域（高级设置，放在最后）
+                ServerConfigSection()
                 
                 // 错误信息
                 if (errorMessage.isNotEmpty()) {
@@ -326,98 +346,40 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 }
                 
                 // 底部间距
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
     
-    @Composable
-    fun HeaderSection() {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // 图标背景
-                Box(
-                    modifier = Modifier
-                        .size(88.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(
-                            androidx.compose.ui.graphics.Brush.radialGradient(
-                                colors = listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ),
-                                radius = 80f
-                            )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ScreenShare,
-                        contentDescription = "屏幕投屏",
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                Text(
-                    text = "Android 屏幕投屏",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    text = "基于WebRTC的实时屏幕共享",
-                    fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
+
     
     @Composable
     fun StatusSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(12.dp), // 统一圆角大小
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp), // 减少阴影
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
             Column(
-                modifier = Modifier.padding(20.dp)
+                modifier = Modifier.padding(16.dp) // 减少padding
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp) // 减少间距
                 ) {
                     Icon(
                         imageVector = Icons.Default.NetworkCheck,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp), // 减少图标大小
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp)) // 减少间距
                     Text(
                         text = "连接状态",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp, // 减少字体大小
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -442,26 +404,26 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     @Composable
     fun StatusChip(label: String, status: String, color: ComposeColor) {
         Card(
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(16.dp), // 减少圆角
             colors = CardDefaults.cardColors(
                 containerColor = color.copy(alpha = 0.1f)
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), // 减少padding
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
+                        .size(5.dp) // 减少指示点大小
                         .clip(CircleShape)
                         .background(color)
                 )
-                Spacer(modifier = Modifier.width(6.dp))
+                Spacer(modifier = Modifier.width(5.dp)) // 减少间距
                 Text(
                     text = "$label: $status",
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = color,
                     fontWeight = FontWeight.Medium
                 )
@@ -473,29 +435,29 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     fun ServerConfigSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(12.dp), // 统一圆角
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(16.dp) // 减少padding
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "服务器配置",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -543,7 +505,8 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                             Icon(
                                 Icons.Default.Edit,
                                 "编辑",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp) // 减少图标大小
                             )
                         }
                     }
@@ -556,29 +519,29 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     fun CaptureSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "投屏模式",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -586,19 +549,19 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp) // 减少间距
                 ) {
                     // App内容模式
                     FilterChip(
                         onClick = { captureMode = CaptureMode.APP_CONTENT },
-                        label = { Text("App内容") },
+                        label = { Text("App内容", fontSize = 13.sp) }, // 减少字体
                         selected = captureMode == CaptureMode.APP_CONTENT,
                         modifier = Modifier.weight(1f),
                         leadingIcon = {
                             Icon(
                                 Icons.Default.PhoneAndroid,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp) // 减少图标大小
                             )
                         }
                     )
@@ -606,20 +569,20 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     // 全屏模式
                     FilterChip(
                         onClick = { captureMode = CaptureMode.FULL_SCREEN },
-                        label = { Text("全屏") },
+                        label = { Text("全屏", fontSize = 13.sp) },
                         selected = captureMode == CaptureMode.FULL_SCREEN,
                         modifier = Modifier.weight(1f),
                         leadingIcon = {
                             Icon(
                                 Icons.Default.Fullscreen,
                                 contentDescription = null,
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp)) // 减少间距
                 
                 Text(
                     text = if (captureMode == CaptureMode.APP_CONTENT) {
@@ -627,7 +590,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     } else {
                         "投屏整个屏幕，需要系统权限"
                     },
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
@@ -638,29 +601,29 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     fun ScreenContentSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Preview,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "投屏内容预览",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -669,8 +632,8 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(200.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(160.dp), // 减少高度
+                    shape = RoundedCornerShape(8.dp), // 减少圆角
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
                     )
@@ -683,11 +646,11 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                             factory = { context ->
                                 TextView(context).apply {
                                     text = "这是投屏内容区域\n时间: ${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(contentUpdateTime))}"
-                                    textSize = 16f
+                                    textSize = 14f // 减少字体大小
                                     setTextColor(Color.BLACK)
                                     gravity = android.view.Gravity.CENTER
                                     setBackgroundColor(Color.WHITE)
-                                    setPadding(32, 32, 32, 32)
+                                    setPadding(24, 24, 24, 24) // 减少padding
                                     screenContentView = this
                                 }
                             },
@@ -699,11 +662,11 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 
                 Text(
                     text = "此区域的内容将被投屏到观看端",
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
@@ -716,29 +679,29 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     fun ControlSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(bottom = 16.dp) // 稍微增加控制按钮前的间距
                 ) {
                     Icon(
                         imageVector = Icons.Default.ControlCamera,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "投屏控制",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -749,8 +712,8 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     onClick = { toggleScreenShare() },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(64.dp),
-                    shape = RoundedCornerShape(16.dp),
+                        .height(52.dp), // 减少按钮高度
+                    shape = RoundedCornerShape(12.dp), // 减少圆角
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (isScreenSharing) {
                             MaterialTheme.colorScheme.error
@@ -762,47 +725,47 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     Icon(
                         imageVector = if (isScreenSharing) Icons.Default.Stop else Icons.Default.PlayArrow,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp) // 减少图标大小
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (isScreenSharing) "停止投屏" else "开始投屏",
-                        fontSize = 18.sp,
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
                 // 房间状态显示
                 if (roomId.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                         )
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(12.dp), // 减少padding
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.MeetingRoom,
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(16.dp), // 减少图标大小
                                 tint = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Column {
                                 Text(
                                     text = "已获取房间",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
                                 Text(
                                     text = roomId,
-                                    fontSize = 16.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -818,29 +781,29 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     fun RoomSection() {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface
             )
         ) {
             Column(
-                modifier = Modifier.padding(24.dp)
+                modifier = Modifier.padding(16.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = 12.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.MeetingRoom,
                         contentDescription = null,
-                        modifier = Modifier.size(20.dp),
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "房间信息",
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -855,12 +818,12 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "房间ID",
-                            fontSize = 12.sp,
+                            fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                         Text(
                             text = roomId.ifEmpty { "未设置" },
-                            fontSize = 16.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -873,12 +836,14 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                                 lifecycleScope.launch {
                                     fetchAvailableRoom()
                                 }
-                            }
+                            },
+                            modifier = Modifier.size(36.dp) // 减少按钮大小
                         ) {
                             Icon(
                                 Icons.Default.Refresh,
                                 "刷新房间",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                         
@@ -888,64 +853,66 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                                 val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                                 val clip = android.content.ClipData.newPlainText("房间ID", roomId)
                                 clipboard.setPrimaryClip(clip)
-                            }
+                            },
+                            modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
                                 Icons.Default.ContentCopy,
                                 "复制",
-                                tint = MaterialTheme.colorScheme.primary
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 
                 // 用户ID
                 Column {
                     Text(
                         text = "用户ID",
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
                     Text(
                         text = userId,
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 
                 // 观看者信息
                 if (remoteUserId.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
                         )
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Visibility,
                                 contentDescription = null,
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(16.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Column {
                                 Text(
                                     text = "观看者已连接",
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                 )
                                 Text(
                                     text = remoteUserId,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -964,37 +931,37 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
             ),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            shape = RoundedCornerShape(12.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Row(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     imageVector = Icons.Default.Error,
                     contentDescription = "错误",
                     tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(20.dp) // 减少图标大小
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = errorMessage,
                     color = MaterialTheme.colorScheme.onErrorContainer,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.weight(1f)
                 )
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 IconButton(
                     onClick = { errorMessage = "" },
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(28.dp) // 减少按钮大小
                 ) {
                     Icon(
                         Icons.Default.Close,
                         "关闭",
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -1363,10 +1330,10 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     }
     
     private fun getSignalingStateColor(): ComposeColor = when (signalingState) {
-        SignalingState.CONNECTED -> ComposeColor(0xFF4CAF50)
-        SignalingState.CONNECTING, SignalingState.RECONNECTING -> ComposeColor(0xFFFF9800)
-        SignalingState.ERROR -> ComposeColor(0xFFF44336)
-        else -> ComposeColor(0xFF9E9E9E)
+        SignalingState.CONNECTED -> com.example.webrtc.ui.theme.AppGreen
+        SignalingState.CONNECTING, SignalingState.RECONNECTING -> com.example.webrtc.ui.theme.AppOrange
+        SignalingState.ERROR -> com.example.webrtc.ui.theme.AppRed
+        else -> com.example.webrtc.ui.theme.AppGray
     }
     
     private fun getConnectionStateText(): String = when (connectionState) {
@@ -1379,10 +1346,10 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     }
     
     private fun getConnectionStateColor(): ComposeColor = when (connectionState) {
-        ConnectionState.CONNECTED -> ComposeColor(0xFF4CAF50)
-        ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> ComposeColor(0xFFFF9800)
-        ConnectionState.FAILED -> ComposeColor(0xFFF44336)
-        else -> ComposeColor(0xFF9E9E9E)
+        ConnectionState.CONNECTED -> com.example.webrtc.ui.theme.AppGreen
+        ConnectionState.CONNECTING, ConnectionState.RECONNECTING -> com.example.webrtc.ui.theme.AppOrange
+        ConnectionState.FAILED -> com.example.webrtc.ui.theme.AppRed
+        else -> com.example.webrtc.ui.theme.AppGray
     }
     
     private fun getScreenShareStateText(): String = when (screenShareState) {
@@ -1395,10 +1362,10 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     }
     
     private fun getScreenShareStateColor(): ComposeColor = when (screenShareState) {
-        ScreenShareState.SHARING -> ComposeColor(0xFF4CAF50)
-        ScreenShareState.PREPARING -> ComposeColor(0xFFFF9800)
-        ScreenShareState.ERROR -> ComposeColor(0xFFF44336)
-        else -> ComposeColor(0xFF9E9E9E)
+        ScreenShareState.SHARING -> com.example.webrtc.ui.theme.AppGreen
+        ScreenShareState.PREPARING -> com.example.webrtc.ui.theme.AppOrange
+        ScreenShareState.ERROR -> com.example.webrtc.ui.theme.AppRed
+        else -> com.example.webrtc.ui.theme.AppGray
     }
     
     // WebRTC事件回调
