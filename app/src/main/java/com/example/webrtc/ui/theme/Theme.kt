@@ -77,7 +77,7 @@ private val UnifiedDarkColorScheme = darkColorScheme(
 )
 
 @Composable
-fun WebrtcTheme(
+fun CastHelperTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // 强制禁用动态颜色，确保一致性
     dynamicColor: Boolean = false,

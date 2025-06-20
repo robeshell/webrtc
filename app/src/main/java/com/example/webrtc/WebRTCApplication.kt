@@ -8,8 +8,8 @@ import android.os.Build
 import org.webrtc.PeerConnectionFactory
 
 /**
- * WebRTC应用程序类
- * 负责初始化WebRTC环境和全局配置
+ * 投屏助手应用程序类
+ * 负责初始化投屏环境和全局配置
  */
 class WebRTCApplication : Application() {
 
@@ -55,20 +55,20 @@ class WebRTCApplication : Application() {
             // 屏幕捕获通知渠道
             val screenCaptureChannel = NotificationChannel(
                 SCREEN_CAPTURE_CHANNEL_ID,
-                "屏幕投屏",
+                "投屏服务",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "屏幕投屏服务通知"
+                description = "投屏服务通知"
                 setShowBadge(false)
             }
             
-            // WebRTC服务通知渠道
+            // 通信服务通知渠道
             val webrtcServiceChannel = NotificationChannel(
                 WEBRTC_SERVICE_CHANNEL_ID,
-                "WebRTC通信",
+                "通信服务",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "WebRTC通信服务通知"
+                description = "通信服务通知"
                 setShowBadge(false)
             }
             

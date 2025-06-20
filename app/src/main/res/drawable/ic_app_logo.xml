@@ -4,58 +4,50 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
     
-    <!-- 背景圆形 -->
+    <!-- 背景 - 遵循Google设计规范，使用更大的安全区域 -->
     <path
-        android:fillColor="#1976D2"
-        android:pathData="M54,54m-50,0a50,50 0,1 1,100 0a50,50 0,1 1,-100 0" />
+        android:fillColor="#2196F3"
+        android:pathData="M54,54m-45,0a45,45 0,1 1,90 0a45,45 0,1 1,-90 0" />
     
-    <!-- 屏幕外框 -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M25,35 L83,35 Q85,35 85,37 L85,65 Q85,67 83,67 L25,67 Q23,67 23,65 L23,37 Q23,35 25,35 Z" />
-    
-    <!-- 屏幕内容区域 -->
-    <path
-        android:fillColor="#42A5F5"
-        android:pathData="M27,38 L81,38 L81,62 L27,62 Z" />
-    
-    <!-- 投屏信号波纹 -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:fillAlpha="0.8"
-        android:pathData="M54,45 Q58,45 58,49 Q58,53 54,53 Q50,53 50,49 Q50,45 54,45 Z" />
-    
-    <!-- 信号波纹1 -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2"
-        android:strokeAlpha="0.6"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M54,49 m-6,0 a6,6 0,1 1,12 0 a6,6 0,1 1,-12 0" />
-    
-    <!-- 信号波纹2 -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2"
-        android:strokeAlpha="0.4"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M54,49 m-10,0 a10,10 0,1 1,20 0 a10,10 0,1 1,-20 0" />
-    
-    <!-- 信号波纹3 -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="2"
-        android:strokeAlpha="0.2"
-        android:fillColor="@android:color/transparent"
-        android:pathData="M54,49 m-14,0 a14,14 0,1 1,28 0 a14,14 0,1 1,-28 0" />
-    
-    <!-- 底部支架 -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M48,67 L60,67 L58,73 L50,73 Z" />
-    
-    <!-- 支架底座 -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M44,73 L64,73 Q66,73 66,75 L66,77 Q66,79 64,79 L44,79 Q42,79 42,77 L42,75 Q42,73 44,73 Z" />
+    <!-- 屏幕设备 - 更小更简洁，留出更多空白 -->
+    <group android:translateX="54" android:translateY="54">
+        <!-- 主屏幕 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M-18,-12 L18,-12 Q20,-12 20,-10 L20,8 Q20,10 18,10 L-18,10 Q-20,10 -20,8 L-20,-10 Q-20,-12 -18,-12 Z" />
+        
+        <!-- 屏幕内容区域 -->
+        <path
+            android:fillColor="#E3F2FD"
+            android:pathData="M-16,-9 L16,-9 L16,6 L-16,6 Z" />
+        
+        <!-- 投屏信号中心点 -->
+        <path
+            android:fillColor="#1976D2"
+            android:pathData="M0,-1.5 Q3,-1.5 3,1.5 Q3,4.5 0,4.5 Q-3,4.5 -3,1.5 Q-3,-1.5 0,-1.5 Z" />
+        
+        <!-- 投屏信号波纹 - 更简洁的设计 -->
+        <path
+            android:strokeColor="#1976D2"
+            android:strokeWidth="1.5"
+            android:strokeAlpha="0.6"
+            android:fillColor="@android:color/transparent"
+            android:pathData="M0,1.5 m-6,0 a6,6 0,1 1,12 0 a6,6 0,1 1,-12 0" />
+        
+        <path
+            android:strokeColor="#1976D2"
+            android:strokeWidth="1.5"
+            android:strokeAlpha="0.3"
+            android:fillColor="@android:color/transparent"
+            android:pathData="M0,1.5 m-10,0 a10,10 0,1 1,20 0 a10,10 0,1 1,-20 0" />
+        
+        <!-- 简化的设备底座 -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M-4,10 L4,10 L3,14 L-3,14 Z" />
+        
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M-8,14 L8,14 Q9,14 9,15 L9,16 Q9,17 8,17 L-8,17 Q-9,17 -9,16 L-9,15 Q-9,14 -8,14 Z" />
+    </group>
 </vector> 

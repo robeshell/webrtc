@@ -34,7 +34,7 @@ import com.example.webrtc.config.DynamicConfig
 import com.example.webrtc.config.WebRTCConfig
 import com.example.webrtc.manager.*
 import com.example.webrtc.model.*
-import com.example.webrtc.ui.theme.WebrtcTheme
+import com.example.webrtc.ui.theme.CastHelperTheme
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.webrtc.IceCandidate
@@ -55,12 +55,12 @@ import org.json.JSONObject
 import kotlinx.coroutines.delay
 
 /**
- * WebRTC屏幕投屏主界面
+ * 投屏助手主界面
  * 
  * 功能：
  * 1. 管理信令连接状态
- * 2. 控制屏幕投屏开关
- * 3. 处理WebRTC连接
+ * 2. 控制投屏开关
+ * 3. 处理连接管理
  * 4. 显示连接状态
  */
 class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignalingManager.SignalingCallback {
@@ -121,7 +121,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
             Log.i(TAG, "所有权限已获取")
         } else {
             Log.w(TAG, "权限被拒绝")
-            errorMessage = "需要相关权限才能使用屏幕投屏功能"
+            errorMessage = "需要相关权限才能使用投屏功能"
         }
     }
     
@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
         observeStates()
         
         setContent {
-            WebrtcTheme {
+            CastHelperTheme {
                 MainScreen()
             }
         }
@@ -299,7 +299,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 TopAppBar(
                     title = {
                         Text(
-                            text = "Android屏幕共享",
+                            text = "投屏助手",
                             fontSize = 20.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -586,7 +586,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 
                 Text(
                     text = if (captureMode == CaptureMode.APP_CONTENT) {
-                        "只投屏当前应用内容，1080p超高清画质"
+                        "只投屏当前应用内容，超高清画质"
                     } else {
                         "投屏整个屏幕，需要系统权限"
                     },
