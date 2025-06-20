@@ -74,7 +74,6 @@ class SocketIOSignalingManager(
     private fun testNetworkConnection(serverUrl: String) {
         scope.launch(Dispatchers.IO) {
             try {
-                Log.d(TAG, "测试网络连接: $serverUrl")
                 val url = java.net.URL("$serverUrl/socket.io/?EIO=4&transport=polling&t=${System.currentTimeMillis()}")
                 val connection = url.openConnection() as java.net.HttpURLConnection
                 connection.connectTimeout = 5000
@@ -82,12 +81,8 @@ class SocketIOSignalingManager(
                 connection.requestMethod = "GET"
                 
                 val responseCode = connection.responseCode
-                Log.d(TAG, "网络测试结果 - 响应码: $responseCode")
                 
-                if (responseCode == 200) {
-                    val response = connection.inputStream.bufferedReader().readText()
-                    Log.d(TAG, "网络测试结果 - 响应内容: ${response.take(100)}...")
-                } else {
+                if (responseCode != 200) {
                     Log.e(TAG, "网络测试失败 - HTTP $responseCode")
                 }
                 connection.disconnect()
@@ -111,7 +106,6 @@ class SocketIOSignalingManager(
         testNetworkConnection(serverUrl)
         
         try {
-            Log.d(TAG, "连接Socket.IO服务器: $serverUrl")
             _signalingState.value = SignalingState.CONNECTING
             
             // 配置Socket.IO选项
@@ -124,10 +118,6 @@ class SocketIOSignalingManager(
                 // 禁用升级到websocket
                 upgrade = false
             }
-            
-            Log.d(TAG, "Socket.IO配置 - 传输方式: ${options.transports.joinToString(",")}")
-            Log.d(TAG, "Socket.IO配置 - 超时时间: ${options.timeout}ms")
-            Log.d(TAG, "Socket.IO配置 - 升级WebSocket: ${options.upgrade}")
             
             // 创建Socket.IO连接
             socket = IO.socket(URI.create(serverUrl), options)
@@ -182,13 +172,6 @@ class SocketIOSignalingManager(
             on(Socket.EVENT_CONNECT_ERROR) { args ->
                 val error = if (args.isNotEmpty()) args[0].toString() else "连接错误"
                 Log.e(TAG, "Socket.IO连接错误: $error")
-                Log.e(TAG, "错误详情 - 参数数量: ${args.size}")
-                for (i in args.indices) {
-                    Log.e(TAG, "错误详情 - 参数[$i]: ${args[i]}")
-                    if (args[i] is Exception) {
-                        Log.e(TAG, "错误详情 - 异常堆栈:", args[i] as Exception)
-                    }
-                }
                 scope.launch {
                     _signalingState.value = SignalingState.ERROR
                     callback.onSignalingError(error)

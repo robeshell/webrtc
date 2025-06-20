@@ -1016,7 +1016,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
      * 开始屏幕投屏
      */
     private fun startScreenShare() {
-        // 🔧 关键修复：防止重复调用
+                    // 防止重复调用
         if (isScreenSharing || shouldStartAfterPermission) {
             Log.w(TAG, "投屏已在进行中或等待权限，跳过重复调用")
             return
@@ -1049,7 +1049,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
      * 内部投屏启动逻辑
      */
     private fun startScreenShareInternal() {
-        // 🔧 再次检查状态，防止并发调用
+                    // 再次检查状态，防止并发调用
         if (isScreenSharing || shouldStartAfterPermission) {
             Log.w(TAG, "投屏状态检查：已在进行中，取消启动")
             return
@@ -1062,7 +1062,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
             try {
                 Log.i(TAG, "正在开始屏幕投屏，房间ID: $roomId")
                 
-                // 🔧 关键修复：检查WebRTC初始化状态
+                // 检查WebRTC初始化状态
                 if (!webRTCManager.isInitialized.value) {
                     Log.w(TAG, "WebRTC未初始化，重新初始化...")
                     val success = webRTCManager.initialize()
@@ -1186,9 +1186,9 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
     private fun stopScreenShare() {
         lifecycleScope.launch {
             try {
-                Log.i(TAG, "🛑 开始停止屏幕投屏...")
+                Log.i(TAG, "开始停止屏幕投屏")
                 
-                // 🔧 关键修复：防止重复停止
+                // 防止重复停止
                 if (!isScreenSharing && screenShareState == ScreenShareState.STOPPED) {
                     Log.w(TAG, "投屏已经停止，跳过重复操作")
                     return@launch
@@ -1203,7 +1203,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 // 2. 离开房间（先断开信令）
                 try {
                     socketIOSignalingManager.leaveRoom()
-                    Log.d(TAG, "✅ 已离开信令房间")
+                    Log.d(TAG, "已离开信令房间")
                 } catch (e: Exception) {
                     Log.w(TAG, "离开房间异常: ${e.message}")
                 }
@@ -1211,7 +1211,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 // 3. 停止屏幕捕获
                 try {
                     screenCaptureManager.stopScreenCapture()
-                    Log.d(TAG, "✅ 屏幕捕获已停止")
+                    Log.d(TAG, "屏幕捕获已停止")
                 } catch (e: Exception) {
                     Log.w(TAG, "停止屏幕捕获异常: ${e.message}")
                 }
@@ -1219,12 +1219,12 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
                 // 4. 最后关闭WebRTC连接
                 try {
                     webRTCManager.close()
-                    Log.d(TAG, "✅ WebRTC连接已关闭")
+                    Log.d(TAG, "WebRTC连接已关闭")
                 } catch (e: Exception) {
                     Log.w(TAG, "关闭WebRTC异常: ${e.message}")
                 }
                 
-                Log.i(TAG, "✅ 屏幕投屏已完全停止")
+                Log.i(TAG, "屏幕投屏已完全停止")
                 
             } catch (e: Exception) {
                 Log.e(TAG, "停止屏幕投屏失败", e)
@@ -1474,19 +1474,19 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
         lifecycleScope.launch {
             try {
                 val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
-                Log.d(TAG, "🔄 开始创建Answer响应...")
+                Log.d(TAG, "开始创建Answer响应")
                 val answer = webRTCManager.createAnswer(offer)
                 if (answer != null) {
-                    Log.d(TAG, "✅ Answer创建成功，SDP长度: ${answer.description.length}")
+                    Log.d(TAG, "Answer创建成功，SDP长度: ${answer.description.length}")
                     val setResult = webRTCManager.setLocalDescription(answer)
                     if (setResult) {
                         socketIOSignalingManager.sendAnswer(answer.description, fromUserId)
                         Log.d(TAG, "Answer已发送给: $fromUserId")
                     } else {
-                        Log.e(TAG, "❌ 设置本地描述失败")
+                        Log.e(TAG, "设置本地描述失败")
                     }
                 } else {
-                    Log.e(TAG, "❌ 创建Answer失败 - answer为null")
+                    Log.e(TAG, "创建Answer失败 - answer为null")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "处理Offer失败", e)
@@ -1530,12 +1530,7 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
      * 更新配置参数根据投屏模式
      */
     private fun updateConfigForCaptureMode() {
-        // 🚨 强制调试：开始配置更新
-        Log.e(TAG, "🚨🚨🚨 updateConfigForCaptureMode 强制调试开始 🚨🚨🚨")
-        Log.e(TAG, "📐 当前投屏模式: $captureMode")
-        Log.e(TAG, "📐 当前配置: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps")
-        
-        // 🔧 关键修复：避免重复更新相同配置
+        // 避免重复更新相同配置
         val newConfig = if (captureMode == CaptureMode.FULL_SCREEN) {
             // 全屏模式：高画质配置
             config.copy(
@@ -1554,8 +1549,6 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
             )
         }
         
-        Log.e(TAG, "📐 新配置目标: ${newConfig.videoWidth}×${newConfig.videoHeight}@${newConfig.videoFps}fps")
-        
         // 只有当配置确实发生变化时才更新
         val currentConfig = config
         if (currentConfig.videoWidth != newConfig.videoWidth ||
@@ -1568,26 +1561,19 @@ class MainActivity : ComponentActivity(), WebRTCEventCallback, SocketIOSignaling
             config.videoFps = newConfig.videoFps
             config.videoBitrate = newConfig.videoBitrate
             
-            Log.e(TAG, "✅ 配置已更新: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps")
-            
             if (captureMode == CaptureMode.FULL_SCREEN) {
-                Log.i(TAG, "🎬 全屏超高画质模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps (${config.videoBitrate/1000f}Mbps)")
+                Log.i(TAG, "全屏超高画质模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps")
             } else {
-                Log.i(TAG, "📱 App内容超高清模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps (${config.videoBitrate/1000f}Mbps)")
+                Log.i(TAG, "App内容超高清模式: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps")
             }
             
-            // 🔧 关键修复：只有在WebRTC已初始化时才更新配置
+            // 只有在WebRTC已初始化时才更新配置
             if (::webRTCManager.isInitialized && webRTCManager.isInitialized.value) {
-                Log.e(TAG, "🔄 通知WebRTCManager更新配置...")
                 webRTCManager.updateConfig(config)
             } else {
                 Log.d(TAG, "WebRTC未初始化，配置将在初始化时应用")
             }
-        } else {
-            Log.e(TAG, "⚠️ 配置未发生变化，跳过更新")
         }
-        
-        Log.e(TAG, "🚨🚨🚨 updateConfigForCaptureMode 强制调试结束 🚨🚨🚨")
     }
 }
 

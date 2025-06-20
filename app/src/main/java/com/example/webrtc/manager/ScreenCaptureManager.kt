@@ -59,15 +59,12 @@ class ScreenCaptureManager(private val context: Context) {
     private fun updateDisplayMetrics() {
         val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager.defaultDisplay.getMetrics(displayMetrics)
-        Log.d(TAG, "屏幕信息: ${displayMetrics.widthPixels}x${displayMetrics.heightPixels}, 密度: ${displayMetrics.density}")
     }
     
     /**
      * 请求屏幕录制权限
      */
     fun requestScreenCapturePermission(activity: Activity) {
-        Log.d(TAG, "请求屏幕录制权限")
-        
         if (mediaProjectionManager == null) {
             Log.e(TAG, "MediaProjectionManager未初始化")
             _screenShareState.value = ScreenShareState.ERROR
@@ -75,14 +72,11 @@ class ScreenCaptureManager(private val context: Context) {
         }
         
         // 在请求新权限前，先清理之前的资源
-        Log.d(TAG, "清理之前的MediaProjection资源")
         cleanupMediaProjection()
         
         // 先启动前台服务，确保在权限获取过程中服务已经运行
-        Log.d(TAG, "在请求权限前启动前台服务")
         try {
             startForegroundService()
-            Log.d(TAG, "前台服务启动命令已发送")
         } catch (e: Exception) {
             Log.e(TAG, "启动前台服务失败", e)
             _screenShareState.value = ScreenShareState.ERROR
@@ -129,8 +123,6 @@ class ScreenCaptureManager(private val context: Context) {
             detectRecordingScope(data)
             
             // 不在这里创建MediaProjection，而是在createScreenCapturer中创建
-            Log.d(TAG, "权限数据已保存，准备创建屏幕捕获器")
-            
             _screenShareState.value = ScreenShareState.PREPARING
             return true
             
@@ -154,20 +146,13 @@ class ScreenCaptureManager(private val context: Context) {
                 val captureArea = extras.getString("capture_area") 
                 val isAppOnly = extras.getBoolean("single_app", false)
                 
-                Log.d(TAG, "权限Intent额外信息: recording_mode=$recordingMode, capture_area=$captureArea, single_app=$isAppOnly")
-                
                 if (isAppOnly || recordingMode == "single_app" || captureArea == "app") {
                     Log.w(TAG, "检测到用户可能选择了单应用录制模式")
                 }
             }
             
-            // 检查Intent的action和category
-            val action = data.action
-            val categories = data.categories
-            Log.d(TAG, "权限Intent信息: action=$action, categories=$categories")
-            
         } catch (e: Exception) {
-            Log.d(TAG, "检测录制范围时出现异常（正常情况）: ${e.message}")
+            // 正常情况，忽略异常
         }
     }
     
@@ -175,20 +160,15 @@ class ScreenCaptureManager(private val context: Context) {
      * 创建屏幕捕获器
      */
     fun createScreenCapturer(): VideoCapturer? {
-        Log.d(TAG, "开始创建屏幕捕获器...")
-        
         if (permissionData == null) {
             Log.e(TAG, "权限数据未初始化，无法创建屏幕捕获器")
             _screenShareState.value = ScreenShareState.ERROR
             return null
         }
         
-        Log.d(TAG, "权限数据已准备好，创建ScreenCapturerAndroid...")
-        
         return try {
             // 确保之前的捕获器已清理
             screenCapturer?.let { oldCapturer ->
-                Log.d(TAG, "清理之前的屏幕捕获器")
                 try {
                     oldCapturer.stopCapture()
                     oldCapturer.dispose()
@@ -217,7 +197,7 @@ class ScreenCaptureManager(private val context: Context) {
                 return null
             }
             
-            Log.i(TAG, "屏幕捕获器创建成功，更新状态为SHARING")
+            Log.i(TAG, "屏幕捕获器创建成功")
             _screenShareState.value = ScreenShareState.SHARING
             screenCapturer
             
@@ -234,12 +214,9 @@ class ScreenCaptureManager(private val context: Context) {
      * 清理MediaProjection相关资源
      */
     private fun cleanupMediaProjection() {
-        Log.d(TAG, "开始清理MediaProjection资源")
-        
         try {
             // 停止屏幕捕获器
             screenCapturer?.let { capturer ->
-                Log.d(TAG, "停止并释放屏幕捕获器")
                 try {
                     capturer.stopCapture()
                     capturer.dispose()
@@ -251,7 +228,6 @@ class ScreenCaptureManager(private val context: Context) {
             
             // 停止MediaProjection
             mediaProjection?.let { projection ->
-                Log.d(TAG, "停止MediaProjection")
                 try {
                     projection.stop()
                 } catch (e: Exception) {
@@ -259,8 +235,6 @@ class ScreenCaptureManager(private val context: Context) {
                 }
                 mediaProjection = null
             }
-            
-            Log.d(TAG, "MediaProjection资源清理完成")
             
         } catch (e: Exception) {
             Log.e(TAG, "清理MediaProjection资源时出现异常", e)
@@ -271,8 +245,6 @@ class ScreenCaptureManager(private val context: Context) {
      * 停止屏幕捕获
      */
     fun stopScreenCapture() {
-        Log.d(TAG, "停止屏幕捕获")
-        
         try {
             // 清理MediaProjection资源
             cleanupMediaProjection()
@@ -299,47 +271,7 @@ class ScreenCaptureManager(private val context: Context) {
         updateDisplayMetrics()
         return Pair(displayMetrics.widthPixels, displayMetrics.heightPixels)
     }
-    
-    /**
-     * 获取屏幕密度
-     */
-    fun getScreenDensity(): Float {
-        return displayMetrics.density
-    }
-    
-    /**
-     * 获取推荐的视频分辨率
-     */
-    fun getRecommendedVideoSize(): Pair<Int, Int> {
-        val (screenWidth, screenHeight) = getScreenSize()
-        
-        // 根据屏幕尺寸计算推荐分辨率
-        return when {
-            screenWidth >= 1920 && screenHeight >= 1080 -> {
-                // 4K屏幕 -> 1080p
-                Pair(1920, 1080)
-            }
-            screenWidth >= 1280 && screenHeight >= 720 -> {
-                // 1080p屏幕 -> 720p
-                Pair(1280, 720)
-            }
-            else -> {
-                // 低分辨率屏幕 -> 按比例缩放
-                val scale = minOf(1280.0 / screenWidth, 720.0 / screenHeight)
-                Pair(
-                    (screenWidth * scale).toInt(),
-                    (screenHeight * scale).toInt()
-                )
-            }
-        }
-    }
-    
-    /**
-     * 检查是否支持屏幕录制
-     */
-    fun isScreenCaptureSupported(): Boolean {
-        return mediaProjectionManager != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP
-    }
+
     
     /**
      * 检查是否有屏幕录制权限
@@ -347,13 +279,7 @@ class ScreenCaptureManager(private val context: Context) {
     fun hasScreenCapturePermission(): Boolean {
         return permissionData != null && permissionResultCode == Activity.RESULT_OK
     }
-    
-    /**
-     * 获取当前屏幕捕获器
-     */
-    fun getCurrentScreenCapturer(): VideoCapturer? {
-        return screenCapturer
-    }
+
     
     /**
      * 手动设置屏幕共享状态（用于ViewCapturer模式）
@@ -366,8 +292,6 @@ class ScreenCaptureManager(private val context: Context) {
      * 释放资源
      */
     fun release() {
-        Log.d(TAG, "释放屏幕捕获资源")
-        
         try {
             // 停止屏幕捕获
             stopScreenCapture()
@@ -386,8 +310,6 @@ class ScreenCaptureManager(private val context: Context) {
      * 启动前台服务
      */
     private fun startForegroundService() {
-        Log.d(TAG, "启动屏幕录制前台服务")
-        
         val intent = Intent(context, ScreenCaptureService::class.java)
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -401,33 +323,11 @@ class ScreenCaptureManager(private val context: Context) {
      * 停止前台服务
      */
     private fun stopForegroundService() {
-        Log.d(TAG, "停止屏幕录制前台服务")
-        
         try {
             val intent = Intent(context, ScreenCaptureService::class.java)
             context.stopService(intent)
-            Log.d(TAG, "前台服务停止命令已发送")
         } catch (e: Exception) {
             Log.e(TAG, "停止前台服务失败", e)
         }
     }
-
-    /**
-     * MediaProjection回调
-     */
-    private inner class MediaProjectionCallback : MediaProjection.Callback() {
-        override fun onStop() {
-            Log.i(TAG, "MediaProjection回调: 停止")
-            _screenShareState.value = ScreenShareState.STOPPED
-        }
-    }
 }
-
-/**
- * 屏幕捕获事件回调接口
- */
-interface ScreenCaptureCallback {
-    fun onScreenCaptureStarted()
-    fun onScreenCaptureStopped()
-    fun onScreenCaptureError(error: String)
-} 

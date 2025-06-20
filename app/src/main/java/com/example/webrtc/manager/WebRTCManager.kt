@@ -55,16 +55,14 @@ class WebRTCManager(
      */
     suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "初始化WebRTC")
-            
             if (_isInitialized.value) {
                 Log.w(TAG, "WebRTC已经初始化")
                 return@withContext true
             }
-            
+
             // 创建PeerConnectionFactory
             setupPeerConnectionFactory()
-            
+
             _isInitialized.value = true
             Log.i(TAG, "WebRTC初始化成功")
             true
@@ -78,21 +76,14 @@ class WebRTCManager(
      * 设置PeerConnectionFactory
      */
     private fun setupPeerConnectionFactory() {
-        Log.d(TAG, "设置PeerConnectionFactory")
-        
-        // 🚨 强制调试：编码器设置
-        Log.e(TAG, "🚨🚨🚨 PeerConnectionFactory 编码器设置开始 🚨🚨🚨")
-        Log.e(TAG, "🎯 目标分辨率: ${config.videoWidth}×${config.videoHeight}")
-        Log.e(TAG, "🎯 目标码率: ${config.videoBitrate}kbps")
-        
         // 初始化PeerConnectionFactory
         val initializeOptions = PeerConnectionFactory.InitializationOptions.builder(context)
-            .setEnableInternalTracer(true)
+            .setEnableInternalTracer(false)
             .createInitializationOptions()
             
         PeerConnectionFactory.initialize(initializeOptions)
         
-        // 🔧 关键修复：创建支持高分辨率的编码器工厂
+        // 创建支持高分辨率的编码器工厂
         val videoEncoderFactory = DefaultVideoEncoderFactory(
             EglBase.create().eglBaseContext,
             true,  // enableIntelVp8Encoder
@@ -103,7 +94,7 @@ class WebRTCManager(
             EglBase.create().eglBaseContext
         )
         
-        // 🔧 强制设置高质量音频处理
+        // 设置高质量音频处理
         val audioProcessingFactory = JavaAudioDeviceModule.builder(context)
             .setSampleRate(WebRTCConfig.Audio.SAMPLE_RATE)
             .setAudioRecordErrorCallback(object : JavaAudioDeviceModule.AudioRecordErrorCallback {
@@ -136,7 +127,7 @@ class WebRTCManager(
             })
             .createAudioDeviceModule()
         
-        // 🚨 关键：设置PeerConnectionFactory选项以禁用自动降级
+        // 设置PeerConnectionFactory选项以禁用自动降级
         val options = PeerConnectionFactory.Options().apply {
             // 禁用网络自适应功能，防止自动降低分辨率
             networkIgnoreMask = 0
@@ -150,12 +141,6 @@ class WebRTCManager(
             .setVideoDecoderFactory(videoDecoderFactory)
             .setAudioDeviceModule(audioProcessingFactory)
             .createPeerConnectionFactory()
-            
-        Log.e(TAG, "✅ PeerConnectionFactory创建完成")
-        Log.e(TAG, "🎯 硬件加速: 已启用")
-        Log.e(TAG, "🎯 H.264 High Profile: 已启用")
-        Log.e(TAG, "🎯 自动降级: 已禁用")
-        Log.e(TAG, "🚨🚨🚨 PeerConnectionFactory 编码器设置结束 🚨🚨🚨")
     }
     
     /**
@@ -163,14 +148,12 @@ class WebRTCManager(
      */
     suspend fun createPeerConnection(): Boolean = withContext(Dispatchers.Main) {
         try {
-            Log.d(TAG, "创建PeerConnection")
-            
             if (!_isInitialized.value) {
                 Log.e(TAG, "WebRTC未初始化")
                 return@withContext false
             }
-            
-            // 🚨 强制禁用所有自适应机制的RTCConfiguration
+
+            // 强制禁用所有自适应机制的RTCConfiguration
             val rtcConfig = PeerConnection.RTCConfiguration(WebRTCConfig.ICE.DEFAULT_ICE_SERVERS).apply {
                 tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED
                 bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
@@ -178,35 +161,24 @@ class WebRTCManager(
                 continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
                 keyType = PeerConnection.KeyType.ECDSA
                 
-                // 🔧 关键修复：禁用所有可能导致分辨率降级的机制
+                // 禁用所有可能导致分辨率降级的机制
                 iceConnectionReceivingTimeout = -1  // 禁用ICE超时降级
                 iceBackupCandidatePairPingInterval = -1  // 禁用备用候选降级
             }
-            
-            Log.e(TAG, "🚨🚨🚨 PeerConnection配置强制调试 🚨🚨🚨")
-            Log.e(TAG, "🎯 目标分辨率: ${config.videoWidth}×${config.videoHeight}")
-            Log.e(TAG, "🎯 目标码率: ${config.videoBitrate}kbps")
-            Log.e(TAG, "🔧 ICE超时降级: 已禁用")
-            Log.e(TAG, "🔧 备用候选降级: 已禁用")
             
             peerConnection = peerConnectionFactory?.createPeerConnection(
                 rtcConfig,
                 PeerConnectionObserver()
             )
             
-            // 🔧 关键修复：创建后立即设置发送参数约束
+            // 创建后立即设置发送参数约束
             peerConnection?.let { pc ->
-                Log.e(TAG, "🔧 设置RTP发送参数约束...")
-                
                 // 获取所有发送器并设置参数
                 val senders = pc.senders
-                Log.e(TAG, "📡 当前发送器数量: ${senders.size}")
                 
                 for (sender in senders) {
                     val track = sender.track()
                     if (track != null && track.kind() == "video") {
-                        Log.e(TAG, "🎥 找到视频发送器，设置参数约束...")
-                        
                         try {
                             // 获取当前参数
                             val parameters = sender.parameters
@@ -215,24 +187,17 @@ class WebRTCManager(
                             if (parameters.encodings.isNotEmpty()) {
                                 val encoding = parameters.encodings[0]
                                 
-                                // 🚨 强制设置分辨率和码率
+                                // 强制设置分辨率和码率
                                 encoding.maxBitrateBps = config.videoBitrate * 1000  // 转换为bps
                                 encoding.minBitrateBps = config.videoBitrate * 800   // 80%最小码率
                                 encoding.maxFramerate = config.videoFps  // 直接使用Int类型
                                 
-                                // 🔧 关键：禁用自适应机制
+                                // 禁用自适应机制
                                 encoding.scaleResolutionDownBy = 1.0  // 禁用分辨率缩放
                                 encoding.active = true
                                 
-                                Log.e(TAG, "✅ 编码参数设置:")
-                                Log.e(TAG, "   📐 分辨率缩放: ${encoding.scaleResolutionDownBy}")
-                                Log.e(TAG, "   🎯 最大码率: ${encoding.maxBitrateBps}bps")
-                                Log.e(TAG, "   🎯 最小码率: ${encoding.minBitrateBps}bps")
-                                Log.e(TAG, "   ⏱️ 最大帧率: ${encoding.maxFramerate}fps")
-                                
                                 // 应用参数
                                 sender.parameters = parameters
-                                Log.e(TAG, "✅ RTP发送参数已应用")
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "设置RTP参数失败", e)
@@ -243,12 +208,10 @@ class WebRTCManager(
             
             _connectionState.value = ConnectionState.CONNECTING
             Log.i(TAG, "PeerConnection创建成功")
-            Log.e(TAG, "🚨🚨🚨 PeerConnection配置完成 🚨🚨🚨")
             true
             
         } catch (e: Exception) {
             Log.e(TAG, "创建PeerConnection失败", e)
-            _connectionState.value = ConnectionState.FAILED
             false
         }
     }
@@ -266,84 +229,61 @@ class WebRTCManager(
      */
     suspend fun createLocalMediaStream(): Boolean = withContext(Dispatchers.Main) {
         try {
-            Log.d(TAG, "创建本地媒体流")
-            
             val factory = peerConnectionFactory ?: return@withContext false
             val pc = peerConnection ?: return@withContext false
             
             // 创建媒体流
             localMediaStream = factory.createLocalMediaStream(LOCAL_STREAM_ID)
             
-            // 创建视频轨道
-            createVideoTrack()
-            
-            // 🔧 关键修复：使用addTrack替代addStream（兼容Unified Plan）
-            Log.e(TAG, "🚨🚨🚨 使用Unified Plan兼容的addTrack方法 🚨🚨🚨")
+            // 创建视频轨道和音频轨道
+            val videoTrack = createVideoTrack()
+            val audioTrack = createAudioTrack()
             
             // 添加视频轨道到PeerConnection
-            localMediaStream?.videoTracks?.forEach { videoTrack ->
-                val rtpSender = pc.addTrack(videoTrack, listOf(LOCAL_STREAM_ID))
-                Log.e(TAG, "✅ 视频轨道已添加到PeerConnection: ${videoTrack.id()}")
-                Log.e(TAG, "📡 RtpSender创建成功: ${rtpSender != null}")
+            videoTrack?.let { track ->
+                val rtpSender = pc.addTrack(track, listOf(LOCAL_STREAM_ID))
             }
             
-            // 如果有音频轨道也添加
-            localMediaStream?.audioTracks?.forEach { audioTrack ->
-                val rtpSender = pc.addTrack(audioTrack, listOf(LOCAL_STREAM_ID))
-                Log.e(TAG, "✅ 音频轨道已添加到PeerConnection: ${audioTrack.id()}")
-                Log.e(TAG, "📡 RtpSender创建成功: ${rtpSender != null}")
+            // 添加音频轨道到PeerConnection
+            audioTrack?.let { track ->
+                val rtpSender = pc.addTrack(track, listOf(LOCAL_STREAM_ID))
             }
             
             Log.i(TAG, "本地媒体流创建成功")
             
-            // 🔧 关键修复：媒体流添加后立即设置RTP参数
+            // 媒体流添加后立即设置RTP参数
             delay(100) // 稍等一下确保发送器已创建
             
-            Log.e(TAG, "🚨🚨🚨 媒体流后RTP参数设置开始 🚨🚨🚨")
-            
             val senders = pc.senders
-            Log.e(TAG, "📡 媒体流后发送器数量: ${senders.size}")
             
             for (sender in senders) {
                 val track = sender.track()
                 if (track != null && track.kind() == "video") {
-                    Log.e(TAG, "🎥 找到视频发送器，强制设置参数...")
-                    
                     try {
                         val parameters = sender.parameters
                         
                         if (parameters.encodings.isNotEmpty()) {
                             val encoding = parameters.encodings[0]
                             
-                            // 🚨 强制设置最严格的参数
+                            // 强制设置最严格的参数
                             encoding.maxBitrateBps = config.videoBitrate * 1000
                             encoding.minBitrateBps = config.videoBitrate * 900  // 90%最小码率，更严格
                             encoding.maxFramerate = config.videoFps  // 直接使用Int类型
                             encoding.scaleResolutionDownBy = 1.0  // 绝对禁用缩放
                             encoding.active = true
                             
-                            Log.e(TAG, "✅ 强制编码参数:")
-                            Log.e(TAG, "   📐 分辨率缩放: ${encoding.scaleResolutionDownBy} (必须为1.0)")
-                            Log.e(TAG, "   🎯 最大码率: ${encoding.maxBitrateBps}bps (${config.videoBitrate}kbps)")
-                            Log.e(TAG, "   🎯 最小码率: ${encoding.minBitrateBps}bps (${config.videoBitrate * 0.9}kbps)")
-                            Log.e(TAG, "   ⏱️ 最大帧率: ${encoding.maxFramerate}fps")
-                            Log.e(TAG, "   🔥 激活状态: ${encoding.active}")
-                            
                             // 应用参数
                             sender.parameters = parameters
-                            Log.e(TAG, "✅ 强制RTP参数已应用到视频发送器")
                             
                         } else {
-                            Log.w(TAG, "⚠️ 编码参数列表为空")
+                            Log.w(TAG, "编码参数列表为空")
                         }
                         
                     } catch (e: Exception) {
-                        Log.e(TAG, "❌ 设置RTP参数失败", e)
+                        Log.e(TAG, "设置RTP参数失败", e)
                     }
                 }
             }
-            
-            Log.e(TAG, "🚨🚨🚨 媒体流后RTP参数设置完成 🚨🚨🚨")
             
             true
             
@@ -356,16 +296,9 @@ class WebRTCManager(
     /**
      * 创建视频轨道
      */
-    private fun createVideoTrack() {
-        val factory = peerConnectionFactory ?: return
-        val capturer = videoCapturer ?: return
-        
-        // 🚨🚨🚨 强制调试信息 🚨🚨🚨
-        Log.e(TAG, "🚨🚨🚨 createVideoTrack 强制调试开始 🚨🚨🚨")
-        Log.e(TAG, "📐 配置分辨率: ${config.videoWidth} × ${config.videoHeight}")
-        Log.e(TAG, "⏱️ 配置帧率: ${config.videoFps}")
-        Log.e(TAG, "🎯 配置码率: ${config.videoBitrate}kbps")
-        Log.e(TAG, "🎥 捕获器类型: ${capturer.javaClass.simpleName}")
+    private fun createVideoTrack(): VideoTrack? {
+        val factory = peerConnectionFactory ?: return null
+        val capturer = videoCapturer ?: return null
         
         // 创建视频源
         videoSource = factory.createVideoSource(false)
@@ -377,31 +310,19 @@ class WebRTCManager(
             videoSource?.capturerObserver
         )
         
-        // 🚨 关键调试：开始捕获 - 打印实际参数
-        Log.e(TAG, "🚀 即将调用 startCapture(${config.videoWidth}, ${config.videoHeight}, ${config.videoFps})")
-        Log.e(TAG, "🔍 确认参数: width=${config.videoWidth}, height=${config.videoHeight}, fps=${config.videoFps}")
-        
         capturer.startCapture(config.videoWidth, config.videoHeight, config.videoFps)
         
-        Log.e(TAG, "✅ startCapture调用完成")
-        
-        // 🔧 关键修复：设置视频约束，防止WebRTC自动降级分辨率
+        // 设置视频约束，防止WebRTC自动降级分辨率
         try {
             // 使用changeCaptureFormat强制确认分辨率
-            Log.e(TAG, "🔧 强制确认分辨率: changeCaptureFormat(${config.videoWidth}, ${config.videoHeight}, ${config.videoFps})")
             capturer.changeCaptureFormat(config.videoWidth, config.videoHeight, config.videoFps)
-            Log.e(TAG, "✅ 分辨率强制确认完成")
             
-            // 🚨 超强修复：多次强制设置，确保生效
+            // 多次强制设置，确保生效
             Thread.sleep(50)
-            Log.e(TAG, "🔧 第二次强制确认分辨率...")
             capturer.changeCaptureFormat(config.videoWidth, config.videoHeight, config.videoFps)
-            Log.e(TAG, "✅ 第二次分辨率强制确认完成")
             
             Thread.sleep(50)
-            Log.e(TAG, "🔧 第三次强制确认分辨率...")
             capturer.changeCaptureFormat(config.videoWidth, config.videoHeight, config.videoFps)
-            Log.e(TAG, "✅ 第三次分辨率强制确认完成")
             
         } catch (e: Exception) {
             Log.w(TAG, "分辨率强制确认失败，但继续创建视频轨道", e)
@@ -411,12 +332,10 @@ class WebRTCManager(
         val videoTrack = factory.createVideoTrack(VIDEO_TRACK_ID, videoSource)
         videoTrack.setEnabled(true)
         
-        // 🔧 关键：设置视频轨道的分辨率约束（如果支持）
+        // 设置视频轨道的分辨率约束（如果支持）
         try {
-            Log.e(TAG, "🎯 尝试设置视频轨道分辨率约束...")
             // 注意：VideoTrack本身不支持直接设置分辨率约束
             // 分辨率主要由VideoCapturer控制
-            Log.e(TAG, "📝 视频轨道创建完成，分辨率控制由VideoCapturer管理")
         } catch (e: Exception) {
             Log.w(TAG, "视频轨道约束设置失败", e)
         }
@@ -424,15 +343,14 @@ class WebRTCManager(
         // 添加到媒体流
         localMediaStream?.addTrack(videoTrack)
         
-        Log.e(TAG, "✅ 视频轨道创建成功: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps")
-        Log.e(TAG, "🚨🚨🚨 createVideoTrack 强制调试结束 🚨🚨🚨")
+        return videoTrack
     }
     
     /**
      * 创建音频轨道
      */
-    private fun createAudioTrack() {
-        val factory = peerConnectionFactory ?: return
+    private fun createAudioTrack(): AudioTrack? {
+        val factory = peerConnectionFactory ?: return null
         
         // 音频约束
         val audioConstraints = MediaConstraints().apply {
@@ -454,6 +372,7 @@ class WebRTCManager(
         localMediaStream?.addTrack(audioTrack)
         
         Log.d(TAG, "音频轨道创建成功")
+        return audioTrack
     }
     
     /**
@@ -468,7 +387,6 @@ class WebRTCManager(
         peerConnection?.createOffer(object : SdpObserver {
             override fun onCreateSuccess(sessionDescription: SessionDescription) {
                 Log.d(TAG, "Offer创建成功")
-                Log.i(TAG, "🎯 使用原始SDP，通过视频捕获参数优化画质")
                 continuation.resume(sessionDescription) {}
             }
             
@@ -498,11 +416,10 @@ class WebRTCManager(
                 }
                 
                 peerConnection?.createAnswer(object : SdpObserver {
-                    override fun onCreateSuccess(sessionDescription: SessionDescription) {
-                        Log.d(TAG, "Answer创建成功")
-                        Log.i(TAG, "🎯 使用原始SDP，通过视频捕获参数优化画质")
-                        continuation.resume(sessionDescription) {}
-                    }
+                                override fun onCreateSuccess(sessionDescription: SessionDescription) {
+                Log.d(TAG, "Answer创建成功")
+                continuation.resume(sessionDescription) {}
+            }
                     
                     override fun onCreateFailure(error: String) {
                         Log.e(TAG, "Answer创建失败: $error")
@@ -571,7 +488,6 @@ class WebRTCManager(
      */
     fun addIceCandidate(iceCandidate: IceCandidate) {
         peerConnection?.addIceCandidate(iceCandidate)
-        Log.d(TAG, "添加ICE候选: ${iceCandidate.sdp}")
     }
     
     /**
@@ -586,11 +502,11 @@ class WebRTCManager(
      */
     fun stopScreenCapture() {
         try {
-            Log.d(TAG, "🛑 安全停止屏幕捕获...")
+            Log.d(TAG, "安全停止屏幕捕获")
             
             videoCapturer?.let { capturer ->
                 try {
-                    // 🔧 关键修复：先检查捕获器类型，分别处理
+                    // 先检查捕获器类型，分别处理
                     when (capturer) {
                         is org.webrtc.ScreenCapturerAndroid -> {
                             Log.d(TAG, "停止ScreenCapturerAndroid")
@@ -623,7 +539,7 @@ class WebRTCManager(
                 }
             }
             
-            Log.d(TAG, "✅ 屏幕捕获已安全停止")
+            Log.d(TAG, "屏幕捕获已安全停止")
         } catch (e: Exception) {
             Log.e(TAG, "停止屏幕捕获失败", e)
             // 强制清除引用，避免后续问题
@@ -635,10 +551,10 @@ class WebRTCManager(
      * 关闭连接
      */
     fun close() {
-        Log.d(TAG, "🔄 开始关闭WebRTC连接...")
+        Log.d(TAG, "开始关闭WebRTC连接")
         
         try {
-            // 🔧 关键修复：添加状态检查，避免重复关闭
+            // 添加状态检查，避免重复关闭
             if (!_isInitialized.value) {
                 Log.w(TAG, "WebRTC未初始化，跳过关闭流程")
                 return
@@ -650,7 +566,7 @@ class WebRTCManager(
             // 2. 清理媒体流和轨道
             try {
                 localMediaStream?.let { stream ->
-                    // 🔧 关键修复：使用更安全的清理方法
+                    // 使用更安全的清理方法
                     safeDisposeMediaStream(stream)
                 }
                 localMediaStream = null
@@ -679,7 +595,7 @@ class WebRTCManager(
             // 5. 关闭PeerConnection
             try {
                 peerConnection?.let { pc ->
-                    // 🔧 检查连接状态，避免重复关闭
+                    // 检查连接状态，避免重复关闭
                     if (pc.connectionState() != PeerConnection.PeerConnectionState.CLOSED) {
                         Log.d(TAG, "关闭PeerConnection，当前状态: ${pc.connectionState()}")
                         pc.close()
@@ -717,7 +633,7 @@ class WebRTCManager(
                 Log.w(TAG, "取消协程异常: ${e.message}")
             }
             
-            Log.i(TAG, "✅ WebRTC连接已安全关闭")
+            Log.i(TAG, "WebRTC连接已安全关闭")
             
         } catch (e: Exception) {
             Log.e(TAG, "关闭WebRTC连接时出现异常", e)
@@ -797,7 +713,7 @@ class WebRTCManager(
      */
     fun updateConfig(newConfig: DynamicConfig) {
         config = newConfig
-        Log.i(TAG, "🔄 配置已更新: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps")
+        Log.i(TAG, "配置已更新: ${config.videoWidth}×${config.videoHeight}@${config.videoFps}fps, ${config.videoBitrate}kbps")
     }
     
     /**
@@ -810,12 +726,12 @@ class WebRTCManager(
      */
     private fun safeDisposeMediaStream(stream: MediaStream) {
         try {
-            Log.d(TAG, "🧹 开始安全清理MediaStream...")
+            Log.d(TAG, "开始安全清理MediaStream")
             
             // 方法1：先尝试直接dispose，如果失败则手动清理
             try {
                 stream.dispose()
-                Log.d(TAG, "✅ MediaStream直接dispose成功")
+                Log.d(TAG, "MediaStream直接dispose成功")
                 return
             } catch (e: IllegalStateException) {
                 Log.w(TAG, "MediaStream直接dispose失败，尝试手动清理: ${e.message}")
@@ -851,7 +767,7 @@ class WebRTCManager(
                 
                 // 最后再次尝试dispose
                 stream.dispose()
-                Log.d(TAG, "✅ MediaStream手动清理成功")
+                                    Log.d(TAG, "MediaStream手动清理成功")
                 
             } catch (e: Exception) {
                 Log.w(TAG, "MediaStream手动清理也失败，忽略: ${e.message}")
